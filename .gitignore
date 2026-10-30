@@ -1,0 +1,12 @@
+.venv/
+.cache/
+__pycache__/
+*.pyc
+data/
+models/
+out/
+build/
+.gradle/
+local.properties
+*.iml
+.idea/
