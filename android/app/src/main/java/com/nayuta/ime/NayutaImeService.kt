@@ -239,6 +239,7 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
             val result = try {
                 engine.convert(target, contextBefore)
             } catch (e: Exception) {
+                android.util.Log.e("NayutaIme", "convert() failed: $target", e)
                 emptyList()
             }
             uiHandler.post {

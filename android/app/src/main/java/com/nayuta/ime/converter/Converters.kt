@@ -1,6 +1,7 @@
 package com.nayuta.ime.converter
 
 import android.content.Context
+import com.nayuta.ime.converter.dict.LatticeConverter
 
 /**
  * 変換エンジンの生成点。**ここが差し替え点の唯一の場所**。
@@ -33,7 +34,9 @@ object Converters {
 
     // ======================= 差し替え点 =======================
     private fun create(context: Context): Converter {
-        return KanaConverter()
+        // M2: 単語ラティス + Viterbi（unigram）。BERT 採点はこの後ろに載せる。
+        // 辞書のロードは初回 convert() 時に呼び出しスレッドで行われる。
+        return LatticeConverter(context)
     }
     // ==========================================================
 }
