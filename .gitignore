@@ -10,3 +10,5 @@ build/
 local.properties
 *.iml
 .idea/
+.android-sdk/
+logs/

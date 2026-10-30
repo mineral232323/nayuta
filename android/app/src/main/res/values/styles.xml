@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      IME の窓は全面をカスタム View が塗るので、テーマ側は装飾なし・背景透明で
+      十分。Material.Light を親にしておくとポップアップ等の標準配色が使える。
+    -->
+    <style name="NayutaImeTheme" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:colorAccent">@color/nayuta_accent</item>
+    </style>
+</resources>

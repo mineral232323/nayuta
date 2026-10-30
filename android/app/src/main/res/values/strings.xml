@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Nayuta</string>
+    <string name="ime_name">Nayuta 日本語入力</string>
+    <string name="subtype_ja">日本語 (12キー)</string>
+</resources>

@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!--
+      Nayuta is an IME only: there is no launcher activity yet. After installing
+      the debug APK, enable it in 設定 → システム → 言語と入力 → 画面キーボード.
+    -->
+    <application
+        android:allowBackup="false"
+        android:icon="@drawable/ic_launcher_nayuta"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/NayutaImeTheme"
+        tools:ignore="DataExtractionRules">
+        <!--
+          allowBackup=false は Android 12+ で非推奨だが、入力内容を端末外に出さない
+          という設計原則（docs/design.md §3-4）のため意図的に無効化している。
+          バックアップ自体を切っているので dataExtractionRules は不要。
+        -->
+
+        <service
+            android:name=".NayutaImeService"
+            android:exported="true"
+            android:label="@string/ime_name"
+            android:permission="android.permission.BIND_INPUT_METHOD">
+
+            <intent-filter>
+                <action android:name="android.view.InputMethod" />
+            </intent-filter>
+
+            <meta-data
+                android:name="android.view.im"
+                android:resource="@xml/method" />
+        </service>
+    </application>
+</manifest>

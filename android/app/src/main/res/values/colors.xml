@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- キーボード描画は keyboard/KeyboardColors.kt が担当する。ここはテーマ用のみ。 -->
+    <color name="nayuta_accent">#7C9CFF</color>
+</resources>
