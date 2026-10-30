@@ -3,16 +3,17 @@ package com.nayuta.ime.converter.dict
 import android.content.Context
 import android.util.Log
 import com.nayuta.ime.converter.Converter
+import com.nayuta.ime.converter.bert.BertScorer
 
 /**
- * 単語ラティス + Viterbi によるかな漢字変換。
+ * 単語ラティス + Viterbi + BERT 再ランクによるかな漢字変換。
  *
- * 読みを左から走査して「辞書に載っている読み」の全スパンを弧として並べ、
- * 最小コストの経路を選ぶ。コストは現状 unigram（単語頻度）のみで、
- * 連接コストや文脈スコアは載せていない。
+ * 2 段構え:
+ *   1. 辞書 unigram コストでビーム探索し、上位 [WANT] 本の変換仮説を作る
+ *   2. それらに出てくるスパンだけを BERT で採点し、`辞書コスト + β·(−log P)` で並べ直す
  *
- * 文脈（context）は今は使っていない。BERT 採点を載せるときに、
- * ここで各弧へスコアを足す（`Arc.extra` を用意してある）。
+ * 全スパンを採点すると端末では重いので、探索で絞ったスパンだけを 1 回の forward で見る。
+ * 文脈（直前の確定済みテキスト）は BERT の入力にだけ使う。
  */
 class LatticeConverter(
     private val appContext: Context,
@@ -21,61 +22,98 @@ class LatticeConverter(
     @Volatile
     private var dict: Dictionary? = null
 
-    /** 重いロードは初回変換時に、呼び出し側のスレッドで 1 回だけ行う。 */
+    @Volatile
+    private var scorer: BertScorer? = null
+
+    @Volatile
+    private var scorerFailed = false
+
     private fun dictionary(): Dictionary {
         dict?.let { return it }
         synchronized(this) {
             dict?.let { return it }
             val t0 = System.currentTimeMillis()
             val d = Dictionary.get(appContext)
-            Log.d("NayutaDict", "loaded readings=${d.readingCount} entries=${d.entryTotal} maxLen=${d.maxReadingLength} in ${System.currentTimeMillis() - t0}ms")
+            Log.d(
+                "NayutaDict",
+                "loaded readings=${d.readingCount} entries=${d.entryTotal} in ${System.currentTimeMillis() - t0}ms",
+            )
             dict = d
             return d
+        }
+    }
+
+    /** BERT が無い/壊れている場合は辞書のみで動かす（品質は落ちるが止まらない）。 */
+    private fun scorerOrNull(): BertScorer? {
+        if (scorerFailed) return null
+        scorer?.let { return it }
+        synchronized(this) {
+            scorer?.let { return it }
+            if (scorerFailed) return null
+            return try {
+                val t0 = System.currentTimeMillis()
+                val s = BertScorer(appContext)
+                Log.d("NayutaBert", "loaded in ${System.currentTimeMillis() - t0}ms")
+                scorer = s
+                s
+            } catch (e: Throwable) {
+                Log.e("NayutaBert", "failed to load scorer; falling back to unigram", e)
+                scorerFailed = true
+                null
+            }
         }
     }
 
     override fun convert(reading: String, context: String): List<String> {
         if (reading.isEmpty()) return emptyList()
         val d = dictionary()
-
         val n = reading.length
         val byStart = Array(n) { ArrayList<Arc>() }
 
-        // 辞書スパン
-        var maxLen = d.maxReadingLength
+        val maxLen = minOf(d.maxReadingLength, MAX_SPAN_LEN)
         for (i in 0 until n) {
             val limit = minOf(n, i + maxLen)
             var j = i + 1
             while (j <= limit) {
                 val idx = d.indexOfReading(reading, i, j)
                 if (idx >= 0) {
-                    val cnt = d.surfaceCountOf(idx)
+                    val cnt = minOf(d.surfaceCountOf(idx), MAX_CANDIDATES)
                     for (k in 0 until cnt) {
-                        byStart[i].add(
-                            Arc(i, j, d.surfaceOf(idx, k), d.costOf(idx, k), 0)
-                        )
+                        byStart[i].add(Arc(i, j, d.surfaceOf(idx, k), d.costOf(idx, k), 0))
                     }
                 }
                 j++
             }
-        }
-        // 未登録文字は「そのままかな」で通す（高コスト）
-        for (i in 0 until n) {
-            byStart[i].add(
-                Arc(i, i + 1, reading.substring(i, i + 1), d.unknownCost, 0)
-            )
+            byStart[i].add(Arc(i, i + 1, reading.substring(i, i + 1), d.unknownCost, 0))
         }
 
-        val paths = nbest(n, byStart, beam = 8, want = 12)
-        Log.d("NayutaConv", "reading=$reading paths=${paths.size} best=${paths.firstOrNull()?.let { p -> p.joinToString("") { it.surface } }}")
+        val t0 = System.currentTimeMillis()
+        val paths = nbest(n, byStart, beam = BEAM, want = WANT)
         if (paths.isEmpty()) return listOf(reading)
+        val searchMs = System.currentTimeMillis() - t0
+
+        val s = scorerOrNull()
+        val ranked = if (s != null) {
+            try {
+                rerank(s, context, reading, paths)
+            } catch (e: Throwable) {
+                Log.e("NayutaBert", "rerank failed", e)
+                paths
+            }
+        } else {
+            paths
+        }
 
         val out = LinkedHashSet<String>()
-        for (p in paths) {
-            val s = buildString { for (a in p) append(a.surface) }
-            out.add(s)
+        for (p in ranked) {
+            out.add(buildString { for (a in p) append(a.surface) })
             if (out.size >= 9) break
         }
+        Log.d(
+            "NayutaConv",
+            "reading=$reading best=${out.firstOrNull()} paths=${paths.size} " +
+                "search=${searchMs}ms total=${System.currentTimeMillis() - t0}ms",
+        )
         return out.toList()
     }
 
@@ -86,7 +124,6 @@ class LatticeConverter(
         val end: Int,
         val surface: String,
         val cost: Int,
-        /** BERT 採点を足すときの拡張点（今は常に 0）。 */
         val extra: Int,
     ) {
         val total: Int get() = cost + extra
@@ -94,7 +131,6 @@ class LatticeConverter(
 
     private class Hyp(val cost: Int, val arcs: List<Arc>)
 
-    /** ビーム探索で上位 [want] 件の経路を返す。 */
     private fun nbest(
         n: Int,
         byStart: Array<ArrayList<Arc>>,
@@ -118,5 +154,69 @@ class LatticeConverter(
         if (last.isEmpty()) return emptyList()
         last.sortBy { it.cost }
         return last.take(want).map { it.arcs }
+    }
+
+    /**
+     * 探索で得た仮説に出てくるスパンだけを BERT で採点して並べ直す。
+     * 仮説に無いスパンは採点しない（端末の計算量を抑えるため）。
+     */
+    private fun rerank(
+        s: BertScorer,
+        context: String,
+        reading: String,
+        paths: List<List<Arc>>,
+    ): List<List<Arc>> {
+        val spanSurfaces = LinkedHashMap<Long, MutableList<String>>()
+        for (path in paths) {
+            for (a in path) {
+                val key = a.start.toLong() * 1000L + a.end
+                val list = spanSurfaces.getOrPut(key) { ArrayList() }
+                if (list.size < MAX_CANDIDATES && !list.contains(a.surface)) {
+                    list.add(a.surface)
+                }
+            }
+        }
+        val keys = spanSurfaces.keys.toList()
+        val reqs = keys.map { key ->
+            val st = (key / 1000L).toInt()
+            val en = (key % 1000L).toInt()
+            BertScorer.SpanRequest(st, en, spanSurfaces[key]!!)
+        }
+        val lps = s.score(context, reading, reqs, MAX_CANDIDATES)
+
+        val logp = HashMap<Long, HashMap<String, Float>>(keys.size)
+        for ((i, key) in keys.withIndex()) {
+            val m = HashMap<String, Float>(4)
+            val surfaces = spanSurfaces[key]!!
+            for (j in surfaces.indices) m[surfaces[j]] = lps[i][j]
+            logp[key] = m
+        }
+
+        val scored = ArrayList<Pair<Int, List<Arc>>>(paths.size)
+        for (path in paths) {
+            var c = 0
+            for (a in path) {
+                c += a.cost
+                val key = a.start.toLong() * 1000L + a.end
+                val lp = logp[key]?.get(a.surface) ?: WORST_LOGPROB
+                c += (-BETA * lp * 100f).toInt()
+            }
+            scored.add(Pair(c, path))
+        }
+        scored.sortBy { it.first }
+        return scored.map { it.second }
+    }
+
+    companion object {
+        private const val BEAM = 32
+        private const val WANT = 48
+        private const val MAX_SPAN_LEN = 16
+        private const val MAX_CANDIDATES = BertScorer.MAX_CANDIDATES
+
+        /** BERT スコアの重み。辞書コストは 1/100 nat 単位なので -β·logP·100 を足す。 */
+        private const val BETA = 6.0f
+
+        /** 仮説に候補が無かったときの代替 logP。 */
+        private const val WORST_LOGPROB = -6.0f
     }
 }

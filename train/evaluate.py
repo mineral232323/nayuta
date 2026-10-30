@@ -25,15 +25,19 @@ MAX_CTX = 64
 class ModelScorer:
     def __init__(self, checkpoint: str, device: torch.device):
         ck = torch.load(checkpoint, map_location="cpu", weights_only=False)
-        from transformers import AutoModel
+        from train.scorer import build_encoder
 
-        encoder = AutoModel.from_pretrained(ck["model_name"])
+        vocab_size = ck.get("vocab_size", 7027)
+        encoder = build_encoder(
+            ck.get("arch", "pretrained"), vocab_size, ck.get("model_name", "")
+        )
         self.model = SpanScorer(encoder, ck["hidden"]).to(device)
         self.model.load_state_dict(ck["model"])
         self.model.eval()
         from huggingface_hub import hf_hub_download
 
-        self.vocab = CharVocab(hf_hub_download(ck["model_name"], "vocab.txt"))
+        vp = ck.get("vocab_path") or hf_hub_download(ck["model_name"], "vocab.txt")
+        self.vocab = CharVocab(vp)
         self.surfaces: List[str] = ck["surfaces"]
         self.surface_id = {s: i for i, s in enumerate(self.surfaces)}
         self.k = ck["k"]
@@ -49,42 +53,37 @@ class ModelScorer:
         spans: Sequence[Tuple[int, int, Sequence[Candidate]]],
         chunk: int = 256,
     ) -> List[torch.Tensor]:
-        """各スパンの候補に対する log P を返す。"""
+        """各スパンの候補に対する log P を返す（端末の推論グラフと同じ経路）。"""
+        from train.scorer import InferenceScorer
+
         cids = self.vocab.encode(ctx[-MAX_CTX:])
         rids = self.vocab.encode(read)
         seq = [self.vocab.cls] + cids + [self.vocab.sep] + rids + [self.vocab.sep]
         off = 1 + len(cids) + 1
+        S = 12
+        net = InferenceScorer(self.model).eval()
         input_ids = torch.tensor([seq], device=self.device)
         am = torch.ones_like(input_ids)
-        hidden = self.model.encode_text(input_ids, am)
 
         out: List[torch.Tensor] = []
         K = max(len(c) for _, _, c in spans)
-        for s in range(0, len(spans), chunk):
-            part = spans[s : s + chunk]
+        for s0 in range(0, len(spans), chunk):
+            part = spans[s0 : s0 + chunk]
             W = len(part)
             starts = torch.zeros((1, W), dtype=torch.long, device=self.device)
             ends = torch.zeros((1, W), dtype=torch.long, device=self.device)
-            cidx = torch.zeros((1, W, K), dtype=torch.long, device=self.device)
-            cmask = torch.zeros((1, W, K), dtype=torch.float, device=self.device)
+            cidx = torch.full((1, W, K, S), self.vocab.pad, dtype=torch.long, device=self.device)
+            cmask = torch.zeros((1, W, K, S), dtype=torch.long, device=self.device)
             for w, (i, j, cands) in enumerate(part):
                 starts[0, w] = off + i
                 ends[0, w] = off + j
                 for c_i, c in enumerate(cands):
-                    cidx[0, w, c_i] = self.surface_id[c.surface]
-                    cmask[0, w, c_i] = 1.0
-            h_span = self.model.pool_spans(hidden, starts, ends)
-            _, _, H = h_span.shape
-            tci, tcm, tlen = self.table
-            uid, inv = torch.unique(cidx.reshape(-1), return_inverse=True)
-            ce = self.model.emb(tci[uid])
-            m = tcm[uid].unsqueeze(-1).to(ce.dtype)
-            ce = (ce * m).sum(1) / tlen[uid].clamp(min=1.0).unsqueeze(-1)
-            c = ce[inv].view(1, W, K, H)
-            hs = h_span.unsqueeze(2).expand(-1, -1, K, -1)
-            feats = torch.cat([hs, c, hs * c], dim=-1)
-            logits = self.model.out(self.model.proj(feats)).squeeze(-1)[0]  # (W,K)
-            logits = logits.masked_fill(cmask[0] == 0, -1e4)
+                    ids = self.vocab.encode(c.surface)[:S]
+                    cidx[0, w, c_i, : len(ids)] = torch.tensor(ids, device=self.device)
+                    cmask[0, w, c_i, : len(ids)] = 1
+            with torch.autocast("cuda", enabled=False):
+                logits = net(input_ids, am, starts, ends, cidx, cmask)[0]  # (W,K)
+            logits = logits.masked_fill(cmask[0, :, :, 0] == 0, -1e4)
             lp = torch.log_softmax(logits.float(), dim=-1)
             for w, (_, _, cands) in enumerate(part):
                 out.append(lp[w, : len(cands)].cpu())
@@ -108,6 +107,7 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--checkpoint", default="models/scorer.pt")
     ap.add_argument("--data-dir", default="data")
+    ap.add_argument("--lexicon", default="lexicon_v2.tsv")
     ap.add_argument("--limit", type=int, default=2000)
     ap.add_argument("--betas", default="0.2,0.5,1.0,2.0")
     ap.add_argument("--no-context", action="store_true", help="文脈を落として寄与を測る")
@@ -116,7 +116,9 @@ def main() -> None:
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     scorer = ModelScorer(args.checkpoint, device)
-    lex: Lexicon = load_lexicon(os.path.join(args.data_dir, "lexicon.tsv"), scorer.k)
+    lex: Lexicon = load_lexicon(
+        os.path.join(args.data_dir, args.lexicon), scorer.k
+    )
     betas = [float(b) for b in args.betas.split(",")]
 
     rows = []

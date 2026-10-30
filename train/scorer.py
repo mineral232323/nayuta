@@ -78,9 +78,7 @@ class SpanScorer(nn.Module):
         attention_mask: torch.Tensor,
         starts: torch.Tensor,
         ends: torch.Tensor,
-        cand_char_ids: torch.Tensor,  # (B,W,K,S)
-        cand_char_mask: torch.Tensor,
-        cand_index: torch.Tensor,  # (B,W,K) -> グローバル候補テーブルの index
+        cand_index: torch.Tensor,  # (B,W,K) -> 候補テーブルの index
         table_char_ids: torch.Tensor,  # (V,S)
         table_char_mask: torch.Tensor,  # (V,S)
         table_len: torch.Tensor,  # (V,)
@@ -115,3 +113,62 @@ def build_candidate_table(
         mask[i, : len(enc)] = 1
         lens[i] = max(len(enc), 1)
     return ids.to(device), mask.to(device), lens.to(device), max_len
+
+
+class InferenceScorer(nn.Module):
+    """ONNX 書き出し用の推論グラフ。
+
+    学習時は候補テーブルを index で引く（重複を潰すため）が、ONNX では
+    torch.unique が使えないので、候補の文字 id を直接受け取る。
+    """
+
+    def __init__(self, scorer: SpanScorer):
+        super().__init__()
+        self.encoder = scorer.encoder
+        self.emb = scorer.emb
+        self.proj = scorer.proj
+        self.out = scorer.out
+
+    def forward(
+        self,
+        input_ids: torch.Tensor,      # (B,L)
+        attention_mask: torch.Tensor,  # (B,L)
+        starts: torch.Tensor,          # (B,W)
+        ends: torch.Tensor,            # (B,W)
+        cand_ids: torch.Tensor,        # (B,W,K,S)
+        cand_mask: torch.Tensor,       # (B,W,K,S)
+    ) -> torch.Tensor:
+        hidden = self.encoder(
+            input_ids=input_ids, attention_mask=attention_mask
+        ).last_hidden_state
+        h_span = SpanScorer.pool_spans(hidden, starts, ends)  # (B,W,H)
+        B, W, H = h_span.shape
+        K = cand_ids.shape[2]
+        ce = self.emb(cand_ids)  # (B,W,K,S,H)
+        m = cand_mask.unsqueeze(-1).to(ce.dtype)
+        ce = (ce * m).sum(3) / m.sum(3).clamp(min=1.0)
+        hs = h_span.unsqueeze(2).expand(-1, -1, K, -1)
+        feats = torch.cat([hs, ce, hs * ce], dim=-1)
+        return self.out(self.proj(feats)).squeeze(-1)
+
+
+def build_encoder(arch: str, vocab_size: int, model_name: str = ""):
+    """arch からエンコーダを組み立てる（学習・評価・書き出しで共用）。"""
+    if arch == "scratch-small":
+        from transformers import BertConfig, BertModel
+
+        cfg = BertConfig(
+            vocab_size=vocab_size,
+            hidden_size=384,
+            num_hidden_layers=6,
+            num_attention_heads=6,
+            intermediate_size=1536,
+            max_position_embeddings=192,
+            type_vocab_size=1,
+            hidden_dropout_prob=0.1,
+            attention_probs_dropout_prob=0.1,
+        )
+        return BertModel(cfg)
+    from transformers import AutoModel
+
+    return AutoModel.from_pretrained(model_name)

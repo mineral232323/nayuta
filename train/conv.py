@@ -62,12 +62,21 @@ class Lexicon:
         unk_cost: float = 25.0,
     ):
         self.entries: Dict[str, List[Candidate]] = {}
-        total = sum(c for lst in entries.values() for _, c in lst) or 1
+        total = sum(it[1] for lst in entries.values() for it in lst) or 1
         for reading, lst in entries.items():
-            lst2 = sorted(lst, key=lambda x: (-x[1], x[0]))[:topk]
-            self.entries[reading] = [
-                Candidate(s, c, -math.log(max(c, 1) / total)) for s, c in lst2
-            ]
+            # (表記, 頻度) または (表記, 頻度, コスト) の両方を受ける。
+            # コストは小さいほど有利。無い場合は頻度から求める。
+            is_explicit = len(next(iter(lst))) >= 3 if lst else False
+            if is_explicit:
+                lst2 = sorted(lst, key=lambda it: (it[2], -it[1], it[0]))[:topk]
+                cands = [Candidate(it[0], it[1], float(it[2])) for it in lst2]
+            else:
+                lst2 = sorted(lst, key=lambda it: (-it[1], it[0]))[:topk]
+                cands = [
+                    Candidate(it[0], it[1], -math.log(max(it[1], 1) / total))
+                    for it in lst2
+                ]
+            self.entries[reading] = cands
         self.unk_cost = unk_cost
         self.max_len = max((len(r) for r in self.entries), default=1)
         self.trie: dict = {}

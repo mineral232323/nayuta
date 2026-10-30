@@ -12,7 +12,12 @@ android {
         minSdk = 26
         targetSdk = 35
         versionCode = 1
-        versionName = "0.1.0"
+        versionName = "0.2.0"
+
+        // ONNX Runtime のネイティブライブラリを全 ABI 分入れると APK が膨らむため arm64 に絞る
+        ndk {
+            abiFilters += listOf("arm64-v8a")
+        }
     }
 
     buildTypes {
@@ -44,4 +49,5 @@ dependencies {
     // The IME intentionally depends only on the Android framework + Kotlin stdlib,
     // so this project builds without any AndroidX artifacts.
     implementation(kotlin("stdlib"))
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.31.1")
 }

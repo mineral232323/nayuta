@@ -13,3 +13,5 @@ local.properties
 .android-sdk/
 logs/
 android/app/src/main/assets/dict/
+android/app/src/main/assets/model/
+models/

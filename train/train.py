@@ -23,7 +23,12 @@ from torch.utils.data import DataLoader, Dataset
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from train.conv import Lexicon  # noqa: E402
-from train.scorer import CharVocab, SpanScorer, build_candidate_table  # noqa: E402
+from train.scorer import (  # noqa: E402
+    CharVocab,
+    SpanScorer,
+    build_candidate_table,
+    build_encoder,
+)
 
 MAX_CTX = 64
 MAX_READ = 48
@@ -31,20 +36,48 @@ MAX_WORDS = 24
 
 
 def load_lexicon(path: str, topk: int) -> Lexicon:
-    entries: Dict[str, List[Tuple[str, int]]] = {}
+    """3 カラム（読み/表記/頻度）と 4 カラム（+ コスト*100）の両方を読む。"""
+    entries: Dict[str, List[tuple]] = {}
     with open(path, encoding="utf-8") as f:
         for line in f:
-            rd, surf, c = line.rstrip("\n").split("\t")
-            entries.setdefault(rd, []).append((surf, int(c)))
+            parts = line.rstrip("\n").split("\t")
+            rd, surf, c = parts[0], parts[1], int(parts[2])
+            if len(parts) >= 4:
+                entries.setdefault(rd, []).append(
+                    (surf, c, int(parts[3]) / 100.0)
+                )
+            else:
+                entries.setdefault(rd, []).append((surf, c))
     return Lexicon(entries, topk=topk)
 
 
+def load_alt_readings(path: str) -> Dict[str, List[str]]:
+    alt: Dict[str, List[str]] = {}
+    if not os.path.exists(path):
+        return alt
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            surf, rds = line.rstrip("\n").split("\t")
+            alt[surf] = rds.split(",")
+    return alt
+
+
 class ConvDataset(Dataset):
-    def __init__(self, path: str, lex: Lexicon, vocab: CharVocab, k: int):
+    def __init__(
+        self,
+        path: str,
+        lex: Lexicon,
+        vocab: CharVocab,
+        k: int,
+        alt: Optional[Dict[str, List[str]]] = None,
+        alt_prob: float = 0.0,
+    ):
         self.path = path
         self.lex = lex
         self.vocab = vocab
         self.k = k
+        self.alt = alt or {}
+        self.alt_prob = alt_prob
         self.offsets: List[int] = []
         self._fh = None
         with open(path, "rb") as f:
@@ -61,15 +94,42 @@ class ConvDataset(Dataset):
             self._fh = open(self.path, "rb")
         return self._fh
 
+    def _maybe_revise_readings(self, words: List[list]) -> List[list]:
+        """表記はそのままに、読みだけ別読みへ置き換える（データ拡張）。
+
+        「日本」が ニッポン でしか出てこないコーパスでも、ニホン 読みの例を作れる。
+        同じ表記・同じ文脈で読みだけ変わるので、変換モデルにとっては妥当な拡張になる。
+        """
+        if self.alt_prob <= 0 or not self.alt:
+            return words
+        out = []
+        for rd, surf in words:
+            alts = self.alt.get(surf)
+            if alts and len(alts) > 1 and random.random() < self.alt_prob:
+                choices = [a for a in alts if a and a != rd]
+                random.shuffle(choices)
+                for a in choices[:2]:
+                    if any(c.surface == surf for c in self.lex.candidates(a)):
+                        out.append([a, surf])
+                        break
+                else:
+                    out.append([rd, surf])
+            else:
+                out.append([rd, surf])
+        return out
+
     def __getitem__(self, idx: int) -> Optional[dict]:
         fh = self._handle()
         fh.seek(self.offsets[idx])
         rec = json.loads(fh.readline())
-        read: str = rec["read"]
+        words = self._maybe_revise_readings(rec["words"])
+        read: str = "".join(w[0] for w in words)
+        if not (2 <= len(read) <= MAX_READ):
+            return None
         ctx: str = rec["ctx"][-MAX_CTX:]
         pos = 0
         starts, ends, cand_lists, golds = [], [], [], []
-        for rd, surf in rec["words"]:
+        for rd, surf in words:
             s, e = pos, pos + len(rd)
             pos = e
             cands = self.lex.candidates(rd)
@@ -97,7 +157,7 @@ class ConvDataset(Dataset):
             "ends": ends,
             "cands": cand_lists,
             "gold": golds,
-            "raw": (ctx, read, rec["words"]),
+            "raw": (ctx, read, words),
         }
 
 
@@ -160,8 +220,6 @@ def forward_batch(model, batch, table, device):
         batch["attention_mask"].to(device),
         batch["starts"].to(device),
         batch["ends"].to(device),
-        None,
-        None,
         batch["cand_index"].to(device),
         tci,
         tcm,
@@ -205,6 +263,9 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--data-dir", default="data")
     ap.add_argument("--model", default="tohoku-nlp/bert-base-japanese-char-v3")
+    ap.add_argument("--arch", default="pretrained", choices=["pretrained", "scratch-small"])
+    ap.add_argument("--lexicon", default="lexicon_v2.tsv")
+    ap.add_argument("--alt-prob", type=float, default=0.25)
     ap.add_argument("--epochs", type=float, default=2.0)
     ap.add_argument("--batch-size", type=int, default=8)
     ap.add_argument("--grad-accum", type=int, default=4)
@@ -223,7 +284,7 @@ def main() -> None:
     torch.backends.cudnn.allow_tf32 = True
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    lex = load_lexicon(os.path.join(args.data_dir, "lexicon.tsv"), args.k)
+    lex = load_lexicon(os.path.join(args.data_dir, args.lexicon), args.k)
     print(f"lexicon: {len(lex.entries)} readings", flush=True)
 
     # 候補表記テーブル
@@ -236,7 +297,6 @@ def main() -> None:
                 surfaces.append(c.surface)
     print(f"candidate surfaces: {len(surfaces)}", flush=True)
 
-    from transformers import AutoModel
     from huggingface_hub import hf_hub_download
 
     vocab_path = hf_hub_download(args.model, "vocab.txt")
@@ -245,13 +305,20 @@ def main() -> None:
 
     table = build_candidate_table(surfaces, vocab, device)
 
-    encoder = AutoModel.from_pretrained(args.model)
+    encoder = build_encoder(args.arch, vocab.size, args.model)
     hidden = encoder.config.hidden_size
     model = SpanScorer(encoder, hidden).to(device)
     print(f"encoder: {args.model} hidden={hidden}", flush=True)
 
+    alt = load_alt_readings(os.path.join(args.data_dir, "alt_readings.tsv"))
+    print(f"alt readings: {len(alt)} surfaces", flush=True)
     train_ds = ConvDataset(
-        os.path.join(args.data_dir, "train.jsonl"), lex, vocab, args.k
+        os.path.join(args.data_dir, "train.jsonl"),
+        lex,
+        vocab,
+        args.k,
+        alt=alt,
+        alt_prob=args.alt_prob,
     )
     valid_ds = ConvDataset(
         os.path.join(args.data_dir, "valid.jsonl"), lex, vocab, args.k
@@ -335,6 +402,8 @@ def main() -> None:
             {
                 "model": model.state_dict(),
                 "model_name": args.model,
+                "arch": args.arch,
+                "vocab_path": vocab_path,
                 "hidden": hidden,
                 "surfaces": surfaces,
                 "k": args.k,
