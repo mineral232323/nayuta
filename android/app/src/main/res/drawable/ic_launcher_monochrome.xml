@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- テーマアイコン用（Android 13+）。システムが単色で塗る。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <path
+        android:pathData="M31.2,78.5 V29.5 L76.8,78.5 V29.5"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="11.4"
+        android:strokeLineCap="square"
+        android:strokeLineJoin="miter" />
+</vector>

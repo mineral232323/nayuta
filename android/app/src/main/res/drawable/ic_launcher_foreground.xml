@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  前景: N のグリフ。左半分は白、右半分は黒で描く（背景と反転させて
+  中央の分割線で文字が入れ替わって見えるようにする）。
+  512 のデザインを 108 にスケールしている（係数 0.2109）。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 左半分の N（白） -->
+    <group>
+        <clip-path
+            android:name="leftClip"
+            android:pathData="M0,0h54v108h-54z" />
+        <path
+            android:pathData="M31.2,78.5 V29.5 L76.8,78.5 V29.5"
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="11.4"
+            android:strokeLineCap="square"
+            android:strokeLineJoin="miter" />
+    </group>
+
+    <!-- 右半分の N（黒） -->
+    <group>
+        <clip-path
+            android:name="rightClip"
+            android:pathData="M54,0h54v108h-54z" />
+        <path
+            android:pathData="M31.2,78.5 V29.5 L76.8,78.5 V29.5"
+            android:strokeColor="#09090B"
+            android:strokeWidth="11.4"
+            android:strokeLineCap="square"
+            android:strokeLineJoin="miter" />
+    </group>
+
+    <!-- 中央の区切りマーク（上は黒、下は白） -->
+    <path
+        android:fillColor="#09090B"
+        android:pathData="M54,29.5 m-2.1,0 a2.1,2.1 0 1,0 4.2,0 a2.1,2.1 0 1,0 -4.2,0" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,78.5 m-2.1,0 a2.1,2.1 0 1,0 4.2,0 a2.1,2.1 0 1,0 -4.2,0" />
+</vector>
