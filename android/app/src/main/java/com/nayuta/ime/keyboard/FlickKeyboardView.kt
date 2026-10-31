@@ -49,6 +49,7 @@ class FlickKeyboardView @JvmOverloads constructor(
         fun onNumberToggle()
         fun onKanaToggle()
         fun onCorrect()
+        fun onShift()
     }
 
     var listener: Listener? = null
@@ -176,12 +177,14 @@ class FlickKeyboardView @JvmOverloads constructor(
         if (keyRects.isEmpty()) rebuildRects(width, height)
         layout.rows.forEachIndexed { rowIndex, row ->
             row.keys.forEachIndexed { columnIndex, key ->
+                if (key is SpacerKey) return@forEachIndexed
                 val rect = keyRects.getOrNull(rowIndex)?.getOrNull(columnIndex) ?: return@forEachIndexed
                 val isPressedKey = rowIndex == pressedRow && columnIndex == pressedCol
                 drawKeyBackground(canvas, rect, key, isPressedKey)
                 when (key) {
                     is FlickKey -> drawFlickKey(canvas, rect, key, isPressedKey)
                     is FunctionKey -> drawFunctionKey(canvas, rect, key)
+                    is SpacerKey -> Unit
                 }
             }
         }
@@ -386,6 +389,9 @@ class FlickKeyboardView @JvmOverloads constructor(
                 if (x >= rect.left - slop && x <= rect.right + slop &&
                     y >= rect.top - slop && y <= rect.bottom + slop
                 ) {
+                    // スペーサーは押せない
+                    val key = layout.rows.getOrNull(rowIndex)?.keys?.getOrNull(columnIndex)
+                    if (key is SpacerKey) return null
                     return rowIndex to columnIndex
                 }
             }
@@ -418,6 +424,7 @@ class FlickKeyboardView @JvmOverloads constructor(
             KeyAction.NUMBER_TOGGLE -> listener?.onNumberToggle()
             KeyAction.KANA_TOGGLE -> listener?.onKanaToggle()
             KeyAction.CORRECT -> listener?.onCorrect()
+            KeyAction.SHIFT -> listener?.onShift()
         }
     }
 
@@ -440,6 +447,7 @@ class FlickKeyboardView @JvmOverloads constructor(
         when (key) {
             is FlickKey -> key.output(direction)?.let { listener?.onText(it) }
             is FunctionKey -> dispatch(key.action)
+            is SpacerKey -> Unit
         }
     }
 

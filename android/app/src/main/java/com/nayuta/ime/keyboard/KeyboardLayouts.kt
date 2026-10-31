@@ -212,67 +212,51 @@ object KeyboardLayouts {
         ),
     )
 
-    // ---------------- 英数 ----------------
+    // ---------------- 英数（QWERTY） ----------------
 
-    private fun alphaKey(label: String, center: String, up: String?, right: String?): FlickKey =
-        FlickKey(label = label, center = center, up = up, right = right)
+    /**
+     * QWERTY 配列。各行の合計幅を 10 に揃えて、キー幅が行をまたいで揃うようにしている。
+     * 2 段目の左右は [SpacerKey] でずらす。
+     */
+    fun alphabet(shift: Boolean): KeyboardLayout {
+        fun letter(c: Char): FlickKey {
+            val s = if (shift) c.uppercaseChar() else c
+            return FlickKey(label = s.toString(), center = s.toString())
+        }
 
-    private val alphabetRows: List<KeyboardRow> = listOf(
-        KeyboardRow(
-            listOf(
-                FlickKey(
-                    label = ",",
-                    center = ",",
-                    up = ";",
-                    right = ":",
-                    left = "?",
-                    down = "!",
-                    widthWeight = AUX,
-                ),
-                alphaKey("ABC", "a", "b", "c"),
-                alphaKey("DEF", "d", "e", "f"),
-                alphaKey("GHI", "g", "h", "i"),
-                aux("⌫", KeyAction.DELETE),
+        val row0 = "qwertyuiop".map { letter(it) }
+        val row1 = listOf(SpacerKey(0.5f)) +
+            "asdfghjkl".map { letter(it) } +
+            listOf(SpacerKey(0.5f))
+        val row2 = listOf(
+            FunctionKey(
+                label = if (shift) "⇧" else "⇧",
+                action = KeyAction.SHIFT,
+                widthWeight = 1.5f,
             ),
-        ),
-        KeyboardRow(
+        ) + "zxcvbnm".map { letter(it) } + listOf(
+            FunctionKey(label = "⌫", action = KeyAction.DELETE, widthWeight = 1.5f),
+        )
+        val row3 = listOf(
+            FunctionKey(label = "123", action = KeyAction.NUMBER_TOGGLE, widthWeight = 1.5f),
+            FunctionKey(label = "空白", action = KeyAction.SPACE, widthWeight = 4.5f),
+            FunctionKey(label = "あa1", action = KeyAction.MODE_TOGGLE, widthWeight = 1.5f),
+            FunctionKey(label = "✓", action = KeyAction.ENTER, widthWeight = 2.5f),
+        )
+
+        return KeyboardLayout(
             listOf(
-                aux("◀", KeyAction.CURSOR_LEFT),
-                alphaKey("JKL", "j", "k", "l"),
-                alphaKey("MNO", "m", "n", "o"),
-                alphaKey("PQR", "p", "q", "r"),
-                aux("▶", KeyAction.CURSOR_RIGHT),
+                KeyboardRow(row0),
+                KeyboardRow(row1),
+                KeyboardRow(row2),
+                KeyboardRow(row3),
             ),
-        ),
-        KeyboardRow(
-            listOf(
-                FlickKey(
-                    label = ".",
-                    center = ".",
-                    up = "-",
-                    down = "/",
-                    widthWeight = AUX,
-                ),
-                alphaKey("STU", "s", "t", "u"),
-                alphaKey("VWX", "v", "w", "x"),
-                alphaKey("YZ", "y", "z", null),
-                convertOrSpaceKey,
-            ),
-        ),
-        KeyboardRow(
-            listOf(
-                aux("aA1", KeyAction.MODE_TOGGLE),
-                FlickKey(label = "@", center = "@", up = "_", right = "#"),
-                FlickKey(label = "_", center = "_", up = "=", right = "+"),
-                FlickKey(label = "/", center = "/", up = "\\", right = "|"),
-                aux("✓", KeyAction.ENTER),
-            ),
-        ),
-    )
+        )
+    }
 
     fun forMode(mode: KeyboardMode): KeyboardLayout = when (mode) {
         KeyboardMode.KANA -> KeyboardLayout(kanaRows)
-        KeyboardMode.ALPHABET -> KeyboardLayout(alphabetRows)
+        KeyboardMode.ALPHABET -> alphabet(shift = false)
         KeyboardMode.NUMBER -> KeyboardLayout(numberRows)
     }
 }

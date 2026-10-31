@@ -82,6 +82,9 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
     private var correctReading = ""
     private var correctingFromComposing = false
 
+    /** 英字の大文字入力モード（1 文字入力すると戻る）。 */
+    private var shiftOn = false
+
     // ---- 単語ごとの変換モード ----
     private var segMode = false
     private var segReading = ""
@@ -138,7 +141,7 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
         }
         val keyboard = FlickKeyboardView(this).apply {
             listener = this@NayutaImeService
-            setLayout(KeyboardLayouts.forMode(mode))
+            setLayout(layoutFor(mode))
         }
 
         root.addView(
@@ -181,7 +184,7 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
         resetComposing(finishComposing = true)
-        keyboardView?.setLayout(KeyboardLayouts.forMode(mode))
+        keyboardView?.setLayout(layoutFor(mode))
     }
 
     override fun onFinishInput() {
@@ -219,6 +222,10 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
             else -> reading.append(text)
         }
 
+        if (mode == KeyboardMode.ALPHABET && shiftOn) {
+            shiftOn = false
+            keyboardView?.setLayout(layoutFor(mode))
+        }
         candidates = emptyList()
         selectedIndex = 0
         livePreview = null
@@ -620,6 +627,19 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
         closeCorrection()
     }
 
+    /** 現在のモードに応じたレイアウト。英数は Shift 状態を反映する。 */
+    private fun layoutFor(mode: KeyboardMode): com.nayuta.ime.keyboard.KeyboardLayout =
+        if (mode == KeyboardMode.ALPHABET) {
+            KeyboardLayouts.alphabet(shiftOn)
+        } else {
+            KeyboardLayouts.forMode(mode)
+        }
+
+    override fun onShift() {
+        shiftOn = !shiftOn
+        if (mode == KeyboardMode.ALPHABET) keyboardView?.setLayout(layoutFor(mode))
+    }
+
     private fun toast(message: String) {
         android.widget.Toast.makeText(this, message, android.widget.Toast.LENGTH_SHORT).show()
     }
@@ -627,19 +647,19 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
     override fun onNumberToggle() {
         if (state != ComposingState.IDLE) commitCurrent()
         mode = if (mode == KeyboardMode.NUMBER) KeyboardMode.KANA else KeyboardMode.NUMBER
-        keyboardView?.setLayout(KeyboardLayouts.forMode(mode))
+        keyboardView?.setLayout(layoutFor(mode))
     }
 
     override fun onKanaToggle() {
         if (state != ComposingState.IDLE) commitCurrent()
         mode = KeyboardMode.KANA
-        keyboardView?.setLayout(KeyboardLayouts.forMode(mode))
+        keyboardView?.setLayout(layoutFor(mode))
     }
 
     override fun onModeToggle() {
         if (state != ComposingState.IDLE) commitCurrent()
         mode = mode.toggled()
-        keyboardView?.setLayout(KeyboardLayouts.forMode(mode))
+        keyboardView?.setLayout(layoutFor(mode))
     }
 
     // ------------------------------------------------------------------

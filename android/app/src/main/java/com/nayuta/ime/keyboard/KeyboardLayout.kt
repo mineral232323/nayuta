@@ -87,9 +87,21 @@ enum class KeyAction {
 
     /** 変換候補の訂正（未実装・予約）。 */
     CORRECT,
+
+    /** 英字の大文字/小文字切り替え。 */
+    SHIFT,
 }
 
 /** キー 1 個の抽象。 */
+
+/**
+ * 何も描かない・何も入力しないスペーサー。QWERTY の段のずれを作るのに使う。
+ */
+data class SpacerKey(
+    override val widthWeight: Float = 1f,
+) : KeySpec() {
+    override val label: String get() = ""
+}
 
 /** キー 1 個の抽象。`widthWeight` は行内での横幅比（左右の補助キーを細くする）。 */
 sealed class KeySpec {
