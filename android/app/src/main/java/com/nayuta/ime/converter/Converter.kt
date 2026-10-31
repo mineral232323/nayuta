@@ -31,6 +31,12 @@ interface Converter {
 
     /** 読み 1 語分の表記候補（区切りを手動で変えたときの引き直しに使う）。 */
     fun candidatesFor(reading: String): List<String>
+
+    /**
+     * 確定した内容から「薄い層」をオンライン更新する。
+     * 対応していない実装は何もしなくてよい。
+     */
+    fun learn(context: String, reading: String, candidates: List<String>, chosen: Int) {}
 }
 
 /**

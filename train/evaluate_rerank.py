@@ -34,6 +34,9 @@ class OnnxModelScorer:
         self.vocab = CharVocab(vocab_path)
         self.k = k
         self.mode = mode
+        # オンライン学習用の w 入力の次元（無いモデルなら 384）
+        wshape = [i.shape for i in self.sess.get_inputs() if i.name == "w"]
+        self.hidden = int(wshape[0][1]) if wshape else 384
 
     def span_logprobs(self, ctx, read, spans, chunk=256):
         import numpy as np
@@ -71,6 +74,8 @@ class OnnxModelScorer:
                     "ends": ends,
                     "cand_ids": cidx,
                     "cand_mask": cmask,
+                    # オンライン学習用の入力。評価では未学習（0）で固定する。
+                    "w": np.zeros((1, self.hidden), dtype=np.float32),
                 },
             )[0][0]  # (W,K)
             if self.mode == "logit":

@@ -8,12 +8,14 @@ import java.nio.FloatBuffer
 import java.nio.LongBuffer
 
 /**
- * 文字レベル BERT 採点器の端末推論。
+ * 文字レベル BERT 採点器の端末推論。オンライン学習用の出力も扱う。
  *
- * 入力は「文脈 + 読み」と、読み中のスパン（文節/単語の範囲）とその候補表記。
- * 出力はスパンごと・候補ごとの log P。
+ * モデルの入出力:
+ *   inputs : input_ids / attention_mask / starts / ends / cand_ids / cand_mask / w
+ *   outputs: logits (B,W,K) / extra (B,W,K) / phi (B,W,K,H)
  *
- * モデルは train/export_onnx.py が書き出した int8 量子化済み ONNX。
+ * - [score] … logits と extra だけを要求（phi は ONNX ランタイム側で刈られる）
+ * - [phiForSpan] … 確定したスパン 1 つ分の phi を要求（W=1 の軽い forward）
  */
 class BertScorer(context: Context) {
 
@@ -23,10 +25,19 @@ class BertScorer(context: Context) {
         val surfaces: List<String>,
     )
 
+    /** 確定時の学習に使う材料。 */
+    data class PhiResult(
+        val logits: FloatArray,          // (K)
+        val extra: FloatArray,           // (K)
+        val phi: Array<FloatArray>,      // (K, H)
+    )
+
     private val env: OrtEnvironment = OrtEnvironment.getEnvironment()
     private val session: OrtSession
     private val vocab: CharVocab = CharVocab.get(context)
-    private val pad: Long = 0L
+
+    /** 学習する薄い層の次元（モデルの w 入力から取る）。 */
+    val hidden: Int
 
     init {
         val bytes = context.assets.open(ASSET).use { it.readBytes() }
@@ -35,20 +46,82 @@ class BertScorer(context: Context) {
             setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
         }
         session = env.createSession(bytes, opts)
+        val wInfo = session.inputInfo["w"] as? ai.onnxruntime.TensorInfo
+        hidden = wInfo?.shape?.getOrNull(1)?.toInt() ?: 384
     }
 
     /**
-     * @param context 直前の確定済みテキスト（末尾 64 文字を使う）
-     * @param reading 変換対象の読み（先頭 48 文字を使う）
-     * @return W x K の log P。候補が無い位置は -1e4。
+     * スパンごとの最終スコア（logits + extra）を返す。
+     * 呼び出し側で softmax して使う。
      */
     fun score(
         context: String,
         reading: String,
         spans: List<SpanRequest>,
         k: Int,
+        w: FloatArray,
     ): Array<FloatArray> {
         if (spans.isEmpty()) return emptyArray()
+        val inputs = buildInputs(context, reading, spans, k, w)
+        try {
+            session.run(inputs, setOf("logits", "extra")).use { out ->
+                @Suppress("UNCHECKED_CAST")
+                val logits = out.get("logits").get().value as Array<Array<FloatArray>>
+                @Suppress("UNCHECKED_CAST")
+                val extra = out.get("extra").get().value as Array<Array<FloatArray>>
+                val wCount = spans.size
+                val res = Array(wCount) { FloatArray(k) }
+                for (i in 0 until wCount) {
+                    val n = spans[i].surfaces.size
+                    for (j in 0 until k) {
+                        res[i][j] = if (j < n) logits[0][i][j] + extra[0][i][j] else -1e4f
+                    }
+                }
+                return res
+            }
+        } finally {
+            inputs.values.forEach { it.close() }
+        }
+    }
+
+    /** 確定した 1 スパン分の logits / extra / phi を取る（学習用）。 */
+    fun phiForSpan(
+        context: String,
+        reading: String,
+        span: SpanRequest,
+        k: Int,
+        w: FloatArray,
+    ): PhiResult? {
+        val inputs = buildInputs(context, reading, listOf(span), k, w)
+        try {
+            session.run(inputs, setOf("logits", "extra", "phi")).use { out ->
+                @Suppress("UNCHECKED_CAST")
+                val logits = out.get("logits").get().value as Array<Array<FloatArray>>
+                @Suppress("UNCHECKED_CAST")
+                val extra = out.get("extra").get().value as Array<Array<FloatArray>>
+                @Suppress("UNCHECKED_CAST")
+                val phi = out.get("phi").get().value as Array<Array<Array<FloatArray>>>
+                val n = span.surfaces.size
+                if (n == 0) return null
+                val l = FloatArray(n) { logits[0][0][it] }
+                val e = FloatArray(n) { extra[0][0][it] }
+                val p = Array(n) { c -> FloatArray(hidden) { d -> phi[0][0][c][d] } }
+                return PhiResult(l, e, p)
+            }
+        } finally {
+            inputs.values.forEach { it.close() }
+        }
+    }
+
+    // ------------------------------------------------------------------
+
+    private fun buildInputs(
+        context: String,
+        reading: String,
+        spans: List<SpanRequest>,
+        k: Int,
+        w: FloatArray,
+    ): HashMap<String, OnnxTensor> {
         val ctx = context.takeLast(MAX_CTX)
         val read = reading.take(MAX_READ)
         val ctxIds = vocab.encode(ctx)
@@ -63,19 +136,18 @@ class BertScorer(context: Context) {
         seq[p] = vocab.sep
         val offset = 1 + ctxIds.size + 1
 
-        val w = spans.size
-        val starts = LongArray(w)
-        val ends = LongArray(w)
-        val candIds = LongArray(w * k * MAX_SURF)
-        val candMask = LongArray(w * k * MAX_SURF)
+        val wCount = spans.size
+        val starts = LongArray(wCount)
+        val ends = LongArray(wCount)
+        val candIds = LongArray(wCount * k * MAX_SURF)
+        val candMask = LongArray(wCount * k * MAX_SURF)
         for (i in spans.indices) {
             val sp = spans[i]
             starts[i] = (offset + sp.start).toLong()
             ends[i] = (offset + sp.end).toLong()
             for (j in 0 until k) {
                 if (j >= sp.surfaces.size) continue
-                val surf = sp.surfaces[j]
-                val ids = vocab.encode(surf)
+                val ids = vocab.encode(sp.surfaces[j])
                 val n = minOf(ids.size, MAX_SURF)
                 val base = (i * k + j) * MAX_SURF
                 for (t in 0 until n) {
@@ -85,47 +157,43 @@ class BertScorer(context: Context) {
             }
         }
 
-        val inputs = HashMap<String, OnnxTensor>()
-        try {
-            inputs["input_ids"] = tensor2(seq, 1, seq.size)
-            inputs["attention_mask"] = OnnxTensor.createTensor(
-                env, LongBuffer.wrap(LongArray(seq.size) { 1L }), longArrayOf(1, seq.size.toLong()),
-            )
-            inputs["starts"] = tensor2(starts, 1, w)
-            inputs["ends"] = tensor2(ends, 1, w)
-            inputs["cand_ids"] = OnnxTensor.createTensor(
-                env, LongBuffer.wrap(candIds), longArrayOf(1, w.toLong(), k.toLong(), MAX_SURF.toLong()),
-            )
-            inputs["cand_mask"] = OnnxTensor.createTensor(
-                env, LongBuffer.wrap(candMask), longArrayOf(1, w.toLong(), k.toLong(), MAX_SURF.toLong()),
-            )
+        val wBuf = FloatArray(hidden)
+        w.copyInto(wBuf, 0, 0, minOf(hidden, w.size))
 
-            session.run(inputs).use { out ->
-                @Suppress("UNCHECKED_CAST")
-                val logits = out.get(0).value as Array<Array<FloatArray>>
-                val res = Array(w) { FloatArray(k) }
-                val row = logits[0]
-                for (i in 0 until w) {
-                    val lr = row[i]
-                    var maxv = -1e9f
-                    val n = spans[i].surfaces.size
-                    for (j in 0 until n) if (lr[j] > maxv) maxv = lr[j]
-                    var sum = 0.0
-                    for (j in 0 until n) sum += Math.exp((lr[j] - maxv).toDouble())
-                    val lse = maxv + Math.log(sum).toFloat()
-                    for (j in 0 until k) {
-                        res[i][j] = if (j < n) lr[j] - lse else -1e4f
-                    }
-                }
-                return res
-            }
-        } finally {
-            for (t in inputs.values) t.close()
+        return HashMap<String, OnnxTensor>().apply {
+            put("input_ids", OnnxTensor.createTensor(env, LongBuffer.wrap(seq), longArrayOf(1, seq.size.toLong())))
+            put(
+                "attention_mask",
+                OnnxTensor.createTensor(
+                    env,
+                    LongBuffer.wrap(LongArray(seq.size) { 1L }),
+                    longArrayOf(1, seq.size.toLong()),
+                ),
+            )
+            put("starts", OnnxTensor.createTensor(env, LongBuffer.wrap(starts), longArrayOf(1, wCount.toLong())))
+            put("ends", OnnxTensor.createTensor(env, LongBuffer.wrap(ends), longArrayOf(1, wCount.toLong())))
+            put(
+                "cand_ids",
+                OnnxTensor.createTensor(
+                    env,
+                    LongBuffer.wrap(candIds),
+                    longArrayOf(1, wCount.toLong(), k.toLong(), MAX_SURF.toLong()),
+                ),
+            )
+            put(
+                "cand_mask",
+                OnnxTensor.createTensor(
+                    env,
+                    LongBuffer.wrap(candMask),
+                    longArrayOf(1, wCount.toLong(), k.toLong(), MAX_SURF.toLong()),
+                ),
+            )
+            put(
+                "w",
+                OnnxTensor.createTensor(env, FloatBuffer.wrap(wBuf), longArrayOf(1, hidden.toLong())),
+            )
         }
     }
-
-    private fun tensor2(data: LongArray, r: Int, c: Int): OnnxTensor =
-        OnnxTensor.createTensor(env, LongBuffer.wrap(data), longArrayOf(r.toLong(), c.toLong()))
 
     fun close() {
         session.close()

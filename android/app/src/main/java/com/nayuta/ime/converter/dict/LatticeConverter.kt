@@ -5,6 +5,7 @@ import android.util.Log
 import com.nayuta.ime.converter.Converter
 import com.nayuta.ime.converter.Segment
 import com.nayuta.ime.converter.bert.BertScorer
+import com.nayuta.ime.converter.bert.OnlineLearner
 
 /**
  * 単語ラティス + Viterbi + BERT 再ランクによるかな漢字変換。
@@ -37,6 +38,9 @@ class LatticeConverter(
 
     @Volatile
     private var englishTried = false
+
+    @Volatile
+    private var learner: OnlineLearner? = null
 
     @Volatile
     private var bigram: BigramLM? = null
@@ -79,6 +83,12 @@ class LatticeConverter(
             }
         }
     }
+
+    /** 端末内オンライン学習の重み。 */
+    private fun learner(s: BertScorer): OnlineLearner =
+        learner ?: synchronized(this) {
+            learner ?: OnlineLearner.get(appContext, s.hidden).also { learner = it }
+        }
 
     /** カタカナ外来語 → 英単語（あんどろいど → Android）。 */
     private fun englishLexicon(): EnglishLexicon? {
@@ -272,7 +282,9 @@ class LatticeConverter(
             val en = (key % 1000L).toInt()
             BertScorer.SpanRequest(st, en, spanSurfaces[key]!!)
         }
-        val lps = s.score(context, reading, reqs, MAX_CANDIDATES)
+        // BERT の元スコア + オンライン学習した薄い層の補正
+        val raw = s.score(context, reading, reqs, MAX_CANDIDATES, learner(s).w)
+        val lps = raw.mapIndexed { i, row -> logSoftmax(row, reqs[i].surfaces.size) }
 
         val logp = HashMap<Long, HashMap<String, Float>>(keys.size)
         for ((i, key) in keys.withIndex()) {
@@ -299,6 +311,60 @@ class LatticeConverter(
         }
         scored.sortBy { it.first }
         return scored.map { it.second }
+    }
+
+    /** 行の有効部分（先頭 n 個）だけの log softmax。 */
+    private fun logSoftmax(row: FloatArray, n: Int): FloatArray {
+        if (n <= 0) return row
+        var maxv = -1e9f
+        for (j in 0 until n) if (row[j] > maxv) maxv = row[j]
+        var sum = 0.0
+        for (j in 0 until n) sum += Math.exp((row[j] - maxv).toDouble())
+        val lse = maxv + Math.log(sum).toFloat()
+        return FloatArray(row.size) { j -> if (j < n) row[j] - lse else -1e4f }
+    }
+
+    /**
+     * 確定した語から薄い層を更新する。
+     * 1 回の forward（W=1）で phi を取り、softmax 確率との差で w を SGD 更新する。
+     */
+    override fun learn(context: String, reading: String, candidates: List<String>, chosen: Int) {
+        if (reading.isEmpty() || candidates.isEmpty() || chosen !in candidates.indices) return
+        if (candidates.size > MAX_CANDIDATES) return
+        val s = scorerOrNull() ?: return
+        val l = learner(s)
+        val span = BertScorer.SpanRequest(0, reading.length, candidates)
+        val res = try {
+            s.phiForSpan(context, reading, span, MAX_CANDIDATES, l.w)
+        } catch (e: Throwable) {
+            Log.e("NayutaOnline", "phi failed", e)
+            null
+        } ?: return
+
+        val n = candidates.size
+        var maxv = -1e9f
+        for (k in 0 until n) {
+            val v = res.logits[k] + res.extra[k]
+            if (v > maxv) maxv = v
+        }
+        var sum = 0.0
+        for (k in 0 until n) sum += Math.exp((res.logits[k] + res.extra[k] - maxv).toDouble())
+        val probs = FloatArray(n) { k ->
+            (Math.exp((res.logits[k] + res.extra[k] - maxv).toDouble()) / sum).toFloat()
+        }
+        val before = probs[chosen]
+        val best = probs.indices.maxByOrNull { probs[it] } ?: 0
+        l.update(res.phi, probs, chosen)
+        // 学習前後の手応え（p が上がっていくか、上位との差が縮むか）を出す
+        Log.d(
+            "NayutaOnline",
+            "learn reading=$reading chosen=${candidates[chosen]} p=%.4f top=${candidates[best]}"
+                .format(before) +
+                " gap=%.3f updates=%d".format(
+                    (res.logits[best] + res.extra[best]) - (res.logits[chosen] + res.extra[chosen]),
+                    l.updateCount,
+                ),
+        )
     }
 
     companion object {

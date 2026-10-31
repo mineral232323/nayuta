@@ -28,6 +28,7 @@ import com.nayuta.ime.converter.dict.UserDictionary
 class SettingsActivity : AppCompatActivity() {
 
     private lateinit var userDictCount: TextView
+    private lateinit var onlineStatus: TextView
     private val density get() = resources.displayMetrics.density
 
     private fun dp(v: Int): Int = (v * density).toInt()
@@ -114,6 +115,33 @@ class SettingsActivity : AppCompatActivity() {
             },
         )
 
+        // ---------------- パーソナライズ ----------------
+        content.addView(sectionHeader("パーソナライズ"))
+        content.addView(
+            card {
+                onlineStatus = caption("")
+                addView(onlineStatus)
+                addView(
+                    MaterialButton(
+                        this@SettingsActivity,
+                        null,
+                        com.google.android.material.R.attr.materialButtonOutlinedStyle,
+                    ).apply {
+                        text = "学習した重みをリセット"
+                        setOnClickListener {
+                            com.nayuta.ime.converter.bert.OnlineLearner
+                                .get(applicationContext, 384).reset()
+                            refreshOnline()
+                        }
+                        layoutParams = LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.WRAP_CONTENT,
+                        ).apply { topMargin = dp(8); bottomMargin = dp(8) }
+                    },
+                )
+            },
+        )
+
         // ---------------- 辞書 ----------------
         content.addView(sectionHeader("辞書"))
         content.addView(
@@ -173,6 +201,14 @@ class SettingsActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         refreshUserDict()
+        refreshOnline()
+    }
+
+    private fun refreshOnline() {
+        val l = com.nayuta.ime.converter.bert.OnlineLearner.get(applicationContext, 384)
+        var norm = 0.0
+        for (v in l.w) norm += v.toDouble() * v
+        onlineStatus.text = "学習回数: ${l.updateCount} 回 / 重みの大きさ: %.3f".format(Math.sqrt(norm))
     }
 
     private fun refreshUserDict() {

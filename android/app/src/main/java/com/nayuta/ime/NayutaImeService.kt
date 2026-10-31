@@ -566,12 +566,21 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
 
     private fun commitSegments() {
         val ic = currentInputConnection
+        // 確定すると文脈が変わるので、確定前の文脈を控えておく
+        val ctx = contextBeforeCursor()
+        val snapshot = segCands.indices.map { i ->
+            Triple(
+                segReading.substring(segBounds[i], segBounds[i + 1]),
+                segCands[i],
+                segSel[i],
+            )
+        }
         val out = buildString {
             for (i in segCands.indices) append(segCands[i].getOrNull(segSel[i]) ?: "")
         }
         if (ic != null && out.isNotEmpty()) ic.commitText(out, 1)
 
-        // 手で直した語だけ学習する（そのまま候補1位を選んだ語は覚えない）
+        // 1) 手で直した語だけユーザー辞書に覚える（丸暗記）
         val ud = UserDictionary.get(applicationContext)
         for (i in segCands.indices) {
             if (!segTouched.getOrElse(i) { false }) continue
@@ -579,6 +588,23 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
             val s = segCands[i].getOrNull(segSel[i]) ?: continue
             if (r.isNotEmpty() && s.isNotEmpty()) ud.add(r, s)
         }
+
+        // 2) 薄い層のオンライン更新。確定した語すべてについて、
+        //    「選んだ表記の確率を上げる」方向に w を動かす（メインスレッドを塞がない）
+        val engine = converter
+        val executor = convertExecutor
+        if (engine != null && executor != null) {
+            executor.execute {
+                for ((r, cands, chosen) in snapshot) {
+                    try {
+                        engine.learn(ctx, r, cands, chosen)
+                    } catch (e: Exception) {
+                        android.util.Log.e("NayutaOnline", "learn failed", e)
+                    }
+                }
+            }
+        }
+
         exitSegmentMode()
         resetComposing(finishComposing = true)
     }
