@@ -29,6 +29,9 @@ class LatticeConverter(
     private var scorerFailed = false
 
     @Volatile
+    private var userDict: UserDictionary? = null
+
+    @Volatile
     private var bigram: BigramLM? = null
 
     @Volatile
@@ -70,6 +73,12 @@ class LatticeConverter(
         }
     }
 
+    /** 訂正パネルで登録したユーザー辞書。 */
+    private fun userDictionary(): UserDictionary =
+        userDict ?: synchronized(this) {
+            userDict ?: UserDictionary.get(appContext).also { userDict = it }
+        }
+
     /** 連接コスト。無くても動く（unigram のみに戻る）。 */
     private fun bigramOrNull(): BigramLM? {
         if (bigramTried) return bigram
@@ -98,6 +107,11 @@ class LatticeConverter(
                     for (k in 0 until cnt) {
                         byStart[i].add(Arc(i, j, d.surfaceOf(idx, k), d.costOf(idx, k), 0))
                     }
+                }
+                // ユーザー辞書は最優先（コスト 0 で必ず勝つ）
+                val userSurfaces = userDictionary().entries(reading.substring(i, j))
+                if (userSurfaces.isNotEmpty()) {
+                    for (u in userSurfaces) byStart[i].add(Arc(i, j, u, USER_COST, 0))
                 }
                 j++
             }
@@ -236,6 +250,9 @@ class LatticeConverter(
 
         /** BERT スコアの重み。辞書コストは 1/100 nat 単位なので -β·logP·100 を足す。 */
         private const val BETA = 1.2f
+
+        /** ユーザー辞書の候補コスト。0 なので通常の辞書より必ず優先される。 */
+        private const val USER_COST = 0
 
         /** 仮説に候補が無かったときの代替 logP。 */
         private const val WORST_LOGPROB = -6.0f
