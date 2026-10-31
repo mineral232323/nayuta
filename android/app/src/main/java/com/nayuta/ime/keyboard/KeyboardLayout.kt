@@ -86,7 +86,6 @@ enum class KeyAction {
     KANA_TOGGLE,
 
     /** 変換候補の訂正（未実装・予約）。 */
-    CORRECT,
 
     /** 英字の大文字/小文字切り替え。 */
     SHIFT,

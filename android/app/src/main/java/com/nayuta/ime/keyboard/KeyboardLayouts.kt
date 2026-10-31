@@ -93,10 +93,10 @@ object KeyboardLayouts {
     private val kanaRows: List<KeyboardRow> = listOf(
         KeyboardRow(
             listOf(
-                // 変換候補の訂正（機能は未実装・予約枠）
+                // 数字・記号ページを呼び出す
                 FunctionKey(
-                    label = "訂正",
-                    action = KeyAction.CORRECT,
+                    label = "1@",
+                    action = KeyAction.SYMBOL_TOGGLE,
                     widthWeight = AUX,
                 ),
                 gojuon("あ", "い", "う", "え", "お"),

@@ -16,7 +16,6 @@ import com.nayuta.ime.converter.Converter
 import com.nayuta.ime.converter.Converters
 import com.nayuta.ime.converter.dict.UserDictionary
 import com.nayuta.ime.keyboard.CandidateView
-import com.nayuta.ime.keyboard.CorrectionPanel
 import com.nayuta.ime.keyboard.FlickKeyboardView
 import com.nayuta.ime.keyboard.KeyboardColors
 import com.nayuta.ime.keyboard.KeyboardLayouts
@@ -77,10 +76,6 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
     private var liveJob: Runnable? = null
 
     // ---- 訂正パネル ----
-    private var correctionView: CorrectionPanel? = null
-    private var correcting = false
-    private var correctReading = ""
-    private var correctingFromComposing = false
 
     /** 英字の大文字入力モード（1 文字入力すると戻る）。 */
     private var shiftOn = false
@@ -96,8 +91,6 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
     private var segGeneration = 0
 
     /** 直前に確定した語（訂正の対象）。 */
-    private var lastCommittedReading: String? = null
-    private var lastCommittedSurface: String? = null
     private var selectedIndex = 0
     private var state: ComposingState = ComposingState.IDLE
     private var mode: KeyboardMode = KeyboardMode.KANA
@@ -144,10 +137,6 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
             setBackgroundColor(KeyboardColors.keyboardBackground)
         }
 
-        val correction = CorrectionPanel(this).apply {
-            onCommit = { surface -> commitCorrection(surface) }
-            onDismiss = { closeCorrection() }
-        }
         val candidates = CandidateView(this).apply {
             onCandidateSelected = { index, _ -> selectCandidate(index) }
         }
@@ -156,13 +145,6 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
             setLayout(layoutFor(mode))
         }
 
-        root.addView(
-            correction,
-            LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ),
-        )
         root.addView(
             candidates,
             // Gboard のサジェスチョン行と同じ 48dp（Material の最小タップ領域）
@@ -178,7 +160,6 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
 
         candidateView = candidates
         keyboardView = keyboard
-        correctionView = correction
         return root
     }
 
@@ -188,7 +169,6 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
         if (KeyboardColors.resolve(this) == wasDark) return
         // テーマが変わったときだけ塗り直す
         candidateView?.applyTheme()
-        correctionView?.applyTheme()
         keyboardView?.applyTheme()
         (keyboardView?.parent as? View)?.setBackgroundColor(KeyboardColors.keyboardBackground)
     }
@@ -221,10 +201,6 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
     // ------------------------------------------------------------------
 
     override fun onText(text: String) {
-        if (correcting) {
-            correctionView?.append(text)
-            return
-        }
         if (segMode) exitSegmentMode()
         if (state == ComposingState.CONVERTING) commitCurrent()
 
@@ -294,10 +270,6 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
     }
 
     override fun onDelete() {
-        if (correcting) {
-            correctionView?.deleteLast()
-            return
-        }
         if (segMode) exitSegmentMode()
         when (state) {
             ComposingState.CONVERTING -> {
@@ -330,7 +302,6 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
     }
 
     override fun onConvert() {
-        if (correcting) return
         if (segMode) {
             cycleSegmentCandidate()
             return
@@ -349,7 +320,6 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
     }
 
     override fun onSpace() {
-        if (correcting) return
         if (segMode) {
             cycleSegmentCandidate()
             return
@@ -615,76 +585,6 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
         segActive = 0
     }
 
-    /**
-     * 訂正。いま変換しようとしている語（または直前に確定した語）を
-     * パネルに出し、表記を直してユーザー辞書へ登録できるようにする。
-     */
-    override fun onCorrect() {
-        if (segMode) exitSegmentMode()
-        if (correcting) {
-            closeCorrection()
-            return
-        }
-        val ic = currentInputConnection ?: return
-
-        when (state) {
-            ComposingState.COMPOSING, ComposingState.CONVERTING -> {
-                val target = reading.toString()
-                if (target.isEmpty()) return
-                val shown = livePreview ?: candidates.getOrNull(selectedIndex) ?: target
-                openCorrection(target, shown, fromComposing = true)
-            }
-
-            ComposingState.IDLE -> {
-                val r = lastCommittedReading
-                val s = lastCommittedSurface
-                if (r.isNullOrEmpty() || s.isNullOrEmpty()) {
-                    toast("訂正できる語がありません")
-                    return
-                }
-                val before = ic.getTextBeforeCursor(s.length, 0)?.toString()
-                if (before != s) {
-                    toast("直前に確定した語だけ訂正できます")
-                    return
-                }
-                openCorrection(r, s, fromComposing = false)
-            }
-        }
-    }
-
-    private fun openCorrection(readingTarget: String, surface: String, fromComposing: Boolean) {
-        cancelLiveConversion()
-        correctReading = readingTarget
-        correctingFromComposing = fromComposing
-        correcting = true
-        correctionView?.show(readingTarget, surface)
-        candidateView?.clear()
-    }
-
-    private fun closeCorrection() {
-        correcting = false
-        correctionView?.hide()
-    }
-
-    /** パネルで「登録」が押された。辞書に入れて、アプリ側のテキストも置き換える。 */
-    private fun commitCorrection(surface: String) {
-        if (surface.isEmpty()) return
-        val ic = currentInputConnection
-        UserDictionary.get(applicationContext).add(correctReading, surface)
-
-        if (correctingFromComposing) {
-            ic?.commitText(surface, 1)
-            resetComposing(finishComposing = true)
-        } else {
-            val old = lastCommittedSurface
-            if (old != null && old.isNotEmpty()) ic?.deleteSurroundingText(old.length, 0)
-            ic?.commitText(surface, 1)
-            lastCommittedSurface = surface
-        }
-        lastCommittedReading = null
-        closeCorrection()
-    }
-
     /** 現在のモードに応じたレイアウト。英数は Shift 状態を反映する。 */
     private fun layoutFor(mode: KeyboardMode): com.nayuta.ime.keyboard.KeyboardLayout =
         if (mode == KeyboardMode.ALPHABET) {
@@ -795,8 +695,6 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
         if (ic != null && text.isNotEmpty()) {
             ic.commitText(text, 1)
             if (reading.isNotEmpty()) {
-                lastCommittedReading = reading.toString()
-                lastCommittedSurface = text
             }
         }
         resetComposing(finishComposing = ic == null)
@@ -852,7 +750,6 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
         segGeneration++
         exitSegmentMode()
         cancelLiveConversion()
-        closeCorrection()
         livePreview = null
         reading.setLength(0)
         candidates = emptyList()
