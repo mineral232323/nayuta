@@ -682,6 +682,20 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
         keyboardView?.setLayout(layoutFor(mode))
     }
 
+    /** 英字 → 数字・記号ページ。 */
+    override fun onSymbolToggle() {
+        if (state != ComposingState.IDLE) commitCurrent()
+        mode = KeyboardMode.SYMBOL
+        keyboardView?.setLayout(layoutFor(mode))
+    }
+
+    /** 数字・記号ページ → 英字。 */
+    override fun onAlphabetToggle() {
+        if (state != ComposingState.IDLE) commitCurrent()
+        mode = KeyboardMode.ALPHABET
+        keyboardView?.setLayout(layoutFor(mode))
+    }
+
     override fun onKanaToggle() {
         if (state != ComposingState.IDLE) commitCurrent()
         mode = KeyboardMode.KANA

@@ -52,6 +52,8 @@ class FlickKeyboardView @JvmOverloads constructor(
         fun onKanaToggle()
         fun onCorrect()
         fun onShift()
+        fun onSymbolToggle()
+        fun onAlphabetToggle()
     }
 
     var listener: Listener? = null
@@ -461,6 +463,8 @@ class FlickKeyboardView @JvmOverloads constructor(
             KeyAction.KANA_TOGGLE -> listener?.onKanaToggle()
             KeyAction.CORRECT -> listener?.onCorrect()
             KeyAction.SHIFT -> listener?.onShift()
+            KeyAction.SYMBOL_TOGGLE -> listener?.onSymbolToggle()
+            KeyAction.ALPHABET_TOGGLE -> listener?.onAlphabetToggle()
         }
     }
 

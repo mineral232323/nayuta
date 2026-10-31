@@ -90,6 +90,12 @@ enum class KeyAction {
 
     /** 英字の大文字/小文字切り替え。 */
     SHIFT,
+
+    /** 英字 → 数字・記号（QWERTY 配列の記号ページ）。 */
+    SYMBOL_TOGGLE,
+
+    /** 数字・記号 → 英字。 */
+    ALPHABET_TOGGLE,
 }
 
 /** キー 1 個の抽象。 */
@@ -138,11 +144,15 @@ data class KeyboardLayout(val rows: List<KeyboardRow>)
 enum class KeyboardMode {
     KANA,
     ALPHABET,
-    NUMBER;
+    /** かなの「数字」キーから入る 12 キーのテンキー。 */
+    NUMBER,
+    /** 英字の「123」キーから入る 数字＋記号のページ。 */
+    SYMBOL;
 
     fun toggled(): KeyboardMode = when (this) {
         KANA -> ALPHABET
         ALPHABET -> KANA
         NUMBER -> KANA
+        SYMBOL -> ALPHABET
     }
 }

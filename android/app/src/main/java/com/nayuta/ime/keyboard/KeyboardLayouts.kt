@@ -239,7 +239,7 @@ object KeyboardLayouts {
         )
         // 下段: 123 / , / 空白 / . / あa1 / ✓ （合計 10）
         val row3 = listOf(
-            FunctionKey(label = "123", action = KeyAction.NUMBER_TOGGLE, widthWeight = 1.5f),
+            FunctionKey(label = "123", action = KeyAction.SYMBOL_TOGGLE, widthWeight = 1.5f),
             FlickKey(label = ",", center = ",", widthWeight = 1.0f),
             FunctionKey(label = "空白", action = KeyAction.SPACE, widthWeight = 3.0f),
             FlickKey(label = ".", center = ".", widthWeight = 1.0f),
@@ -257,9 +257,45 @@ object KeyboardLayouts {
         )
     }
 
+    // ---------------- 数字＋記号（英字の 123） ----------------
+    //
+    //  1 2 3 4 5 6 7 8 9 0
+    //  @ # ¥ % & - + ( ) /
+    //  ABC * " ' : ; ! ?  ⌫
+    //  あa1  ,   空白   .   ⏎
+    private fun symbolKey(label: String): FlickKey = FlickKey(label = label, center = label)
+
+    private val symbolRows: List<KeyboardRow> = listOf(
+        KeyboardRow("1234567890".map { symbolKey(it.toString()) }),
+        KeyboardRow("@#¥%&-+()/".map { symbolKey(it.toString()) }),
+        KeyboardRow(
+            listOf(
+                FunctionKey(label = "ABC", action = KeyAction.ALPHABET_TOGGLE, widthWeight = 1.5f),
+                symbolKey("*"),
+                symbolKey("\""),
+                symbolKey("'"),
+                symbolKey(":"),
+                symbolKey(";"),
+                symbolKey("!"),
+                symbolKey("?"),
+                FunctionKey(label = "⌫", action = KeyAction.DELETE, widthWeight = 1.5f),
+            ),
+        ),
+        KeyboardRow(
+            listOf(
+                FunctionKey(label = "あa1", action = KeyAction.KANA_TOGGLE, widthWeight = 1.7f),
+                symbolKey(","),
+                FunctionKey(label = "空白", action = KeyAction.SPACE, widthWeight = 5.0f),
+                symbolKey("."),
+                FunctionKey(label = "⏎", action = KeyAction.ENTER, widthWeight = 1.7f),
+            ),
+        ),
+    )
+
     fun forMode(mode: KeyboardMode): KeyboardLayout = when (mode) {
         KeyboardMode.KANA -> KeyboardLayout(kanaRows)
         KeyboardMode.ALPHABET -> alphabet(shift = false)
         KeyboardMode.NUMBER -> KeyboardLayout(numberRows)
+        KeyboardMode.SYMBOL -> KeyboardLayout(symbolRows)
     }
 }
