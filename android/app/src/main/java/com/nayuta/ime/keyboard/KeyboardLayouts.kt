@@ -83,7 +83,12 @@ object KeyboardLayouts {
     private val kanaRows: List<KeyboardRow> = listOf(
         KeyboardRow(
             listOf(
-                longVowelKey,
+                // 変換候補の訂正（機能は未実装・予約枠）
+                FunctionKey(
+                    label = "訂正",
+                    action = KeyAction.CORRECT,
+                    widthWeight = AUX,
+                ),
                 gojuon("あ", "い", "う", "え", "お"),
                 gojuon("か", "き", "く", "け", "こ"),
                 gojuon("さ", "し", "す", "せ", "そ"),
@@ -123,47 +128,56 @@ object KeyboardLayouts {
 
     // ---------------- 数字テンキー ----------------
 
+    /** 数字テンキーの補助列は 0.5 キー幅（数字を広く取る）。 */
+    private const val NUM_AUX = 0.5f
+
+    private fun numAux(label: String, action: KeyAction): FunctionKey =
+        FunctionKey(label = label, action = action, widthWeight = NUM_AUX)
+
     private fun digit(label: String): FlickKey = FlickKey(label = label, center = label)
 
     private val numberRows: List<KeyboardRow> = listOf(
         KeyboardRow(
             listOf(
-                aux("あa1", KeyAction.KANA_TOGGLE),
+                numAux("あa1", KeyAction.KANA_TOGGLE),
                 digit("1"),
                 digit("2"),
                 digit("3"),
-                aux("⌫", KeyAction.DELETE),
+                // 「3 の隣」に削除
+                numAux("⌫", KeyAction.DELETE),
             ),
         ),
         KeyboardRow(
             listOf(
-                aux("◀", KeyAction.CURSOR_LEFT),
+                numAux("◀", KeyAction.CURSOR_LEFT),
                 digit("4"),
                 digit("5"),
                 digit("6"),
-                aux("▶", KeyAction.CURSOR_RIGHT),
+                numAux("▶", KeyAction.CURSOR_RIGHT),
             ),
         ),
         KeyboardRow(
             listOf(
+                // ピリオドは 0.5 キー
                 FlickKey(
                     label = ".",
                     center = ".",
                     up = "-",
                     left = "/",
                     down = ":",
-                    widthWeight = AUX,
+                    widthWeight = NUM_AUX,
                 ),
                 digit("7"),
                 digit("8"),
                 digit("9"),
+                // カンマも 0.5 キー
                 FlickKey(
                     label = ",",
                     center = ",",
                     up = "+",
                     left = "=",
                     down = "\\",
-                    widthWeight = AUX,
+                    widthWeight = NUM_AUX,
                 ),
             ),
         ),
@@ -174,12 +188,19 @@ object KeyboardLayouts {
                     center = "ー",
                     up = "〜",
                     right = "…",
-                    widthWeight = AUX,
+                    widthWeight = NUM_AUX,
                 ),
-                FlickKey(label = "と", center = "と", up = "を", right = "ん", down = "、"),
+                // かっこ。タップで「（」、上フリックで「）」
+                FlickKey(
+                    label = "（）",
+                    center = "（",
+                    up = "）",
+                    right = "「",
+                    left = "」",
+                ),
                 digit("0"),
-                aux("⏎", KeyAction.ENTER, weight = 1f),
-                aux("✓", KeyAction.ENTER),
+                FlickKey(label = "00", center = "00"),
+                numAux("✓", KeyAction.ENTER),
             ),
         ),
     )

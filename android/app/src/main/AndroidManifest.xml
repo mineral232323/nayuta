@@ -3,8 +3,9 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <!--
-      Nayuta is an IME only: there is no launcher activity yet. After installing
-      the debug APK, enable it in 設定 → システム → 言語と入力 → 画面キーボード.
+      IME 本体に加えて、動作確認用の入力画面（TestInputActivity）を持つ。
+      実機テストはこの画面で行い、メッセージアプリなど個人情報を含む
+      アプリをテストに使わない。
     -->
     <application
         android:allowBackup="false"
@@ -18,6 +19,17 @@
           という設計原則（docs/design.md §3-4）のため意図的に無効化している。
           バックアップ自体を切っているので dataExtractionRules は不要。
         -->
+
+        <activity
+            android:name=".TestInputActivity"
+            android:exported="true"
+            android:label="@string/test_input_title"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
 
         <service
             android:name=".NayutaImeService"
