@@ -109,8 +109,19 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
     // ライフサイクル
     // ------------------------------------------------------------------
 
+    /** 設定が変わったらキーボードを作り直す（高さ・振動・外観を反映）。 */
+    private val prefListener =
+        android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
+            uiHandler.post {
+                KeyboardColors.resolve(this)
+                setInputView(onCreateInputView())
+            }
+        }
+
     override fun onCreate() {
         super.onCreate()
+        NayutaSettings.init(this)
+        com.nayuta.ime.NayutaSettings.register(this, prefListener)
         converter = Converters.get(this)
         convertExecutor = Executors.newSingleThreadExecutor { runnable ->
             Thread(runnable, "nayuta-convert")
@@ -121,6 +132,7 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
         convertExecutor?.shutdownNow()
         convertExecutor = null
         uiHandler.removeCallbacksAndMessages(null)
+        com.nayuta.ime.NayutaSettings.unregister(prefListener)
         super.onDestroy()
     }
 
@@ -240,9 +252,11 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
         if (segMode) return
         if (reading.isEmpty()) return
         val target = reading.toString()
+        val delay = NayutaSettings.liveDelayMs
+        if (delay <= 0) return
         val job = Runnable { startLiveConversion(target) }
         liveJob = job
-        uiHandler.postDelayed(job, LIVE_CONVERT_DELAY_MS)
+        uiHandler.postDelayed(job, delay.toLong())
     }
 
     private fun cancelLiveConversion() {

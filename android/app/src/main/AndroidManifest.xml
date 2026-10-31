@@ -21,15 +21,20 @@
         -->
 
         <activity
-            android:name=".TestInputActivity"
+            android:name=".SettingsActivity"
             android:exported="true"
-            android:label="@string/test_input_title"
-            android:windowSoftInputMode="adjustResize">
+            android:label="@string/settings_title">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".TestInputActivity"
+            android:exported="true"
+            android:label="@string/test_input_title"
+            android:windowSoftInputMode="adjustResize" />
 
         <service
             android:name=".NayutaImeService"

@@ -56,6 +56,12 @@ class UserDictionary private constructor(
 
     val size: Int get() = cache.values.sumOf { it.size }
 
+    /** 全件削除。 */
+    fun clear() {
+        cache.clear()
+        persist()
+    }
+
     private fun persist() {
         val sb = StringBuilder()
         for ((reading, surfaces) in cache) {

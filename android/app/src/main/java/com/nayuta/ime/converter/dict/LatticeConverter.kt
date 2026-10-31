@@ -82,6 +82,7 @@ class LatticeConverter(
 
     /** カタカナ外来語 → 英単語（あんどろいど → Android）。 */
     private fun englishLexicon(): EnglishLexicon? {
+        if (!com.nayuta.ime.NayutaSettings.englishEnabled) return null
         if (englishTried) return english
         synchronized(this) {
             if (englishTried) return english

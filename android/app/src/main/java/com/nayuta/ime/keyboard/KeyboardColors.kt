@@ -93,11 +93,21 @@ object KeyboardColors {
     var isDark: Boolean = false
         private set
 
-    /** 端末の設定（uiMode）からテーマを決める。 */
+    /**
+     * テーマを決める。設定で「ライト/ダーク」が選ばれていればそれに従い、
+     * 「システム」なら端末の uiMode に従う。
+     */
     fun resolve(context: Context): Boolean {
-        val night = context.resources.configuration.uiMode and
-            Configuration.UI_MODE_NIGHT_MASK
-        val dark = night == Configuration.UI_MODE_NIGHT_YES
+        val mode = com.nayuta.ime.NayutaSettings.themeMode
+        val dark = when (mode) {
+            1 -> false
+            2 -> true
+            else -> {
+                val night = context.resources.configuration.uiMode and
+                    Configuration.UI_MODE_NIGHT_MASK
+                night == Configuration.UI_MODE_NIGHT_YES
+            }
+        }
         setDark(dark)
         return dark
     }

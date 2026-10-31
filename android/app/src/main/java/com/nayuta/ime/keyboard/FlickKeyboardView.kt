@@ -331,7 +331,7 @@ class FlickKeyboardView @JvmOverloads constructor(
                 downY = event.y
                 activePointerId = event.getPointerId(0)
                 isPressed = true
-                performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                haptic(HapticFeedbackConstants.VIRTUAL_KEY)
                 invalidate()
                 return true
             }
@@ -346,7 +346,7 @@ class FlickKeyboardView @JvmOverloads constructor(
                 )
                 if (direction != pressedDirection) {
                     pressedDirection = direction
-                    performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                    haptic(HapticFeedbackConstants.KEYBOARD_TAP)
                     invalidate()
                 }
                 return true
@@ -487,7 +487,7 @@ class FlickKeyboardView @JvmOverloads constructor(
     // ------------------------------------------------------------------
 
     /** 1 行ぶんの基準高さ（heightWeight = 1 のとき）。 */
-    private val rowUnit: Float get() = dp(50f)
+    private val rowUnit: Float get() = dp(com.nayuta.ime.NayutaSettings.rowUnitDp)
 
     /** キー間のすき間。Material の 4dp グリッド。 */
     private val rowGap: Float get() = dp(4f)
@@ -502,6 +502,13 @@ class FlickKeyboardView @JvmOverloads constructor(
     fun applyTheme() {
         setBackgroundColor(KeyboardColors.keyboardBackground)
         invalidate()
+    }
+
+    /** 設定で振動がオフなら何もしない。 */
+    private fun haptic(constant: Int) {
+        if (com.nayuta.ime.NayutaSettings.vibrate) {
+            performHapticFeedback(constant)
+        }
     }
 
     override fun onDetachedFromWindow() {
