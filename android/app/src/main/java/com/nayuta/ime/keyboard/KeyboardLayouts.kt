@@ -237,11 +237,14 @@ object KeyboardLayouts {
         ) + "zxcvbnm".map { letter(it) } + listOf(
             FunctionKey(label = "⌫", action = KeyAction.DELETE, widthWeight = 1.5f),
         )
+        // 下段: 123 / , / 空白 / . / あa1 / ✓ （合計 10）
         val row3 = listOf(
             FunctionKey(label = "123", action = KeyAction.NUMBER_TOGGLE, widthWeight = 1.5f),
-            FunctionKey(label = "空白", action = KeyAction.SPACE, widthWeight = 4.5f),
+            FlickKey(label = ",", center = ",", widthWeight = 1.0f),
+            FunctionKey(label = "空白", action = KeyAction.SPACE, widthWeight = 3.0f),
+            FlickKey(label = ".", center = ".", widthWeight = 1.0f),
             FunctionKey(label = "あa1", action = KeyAction.MODE_TOGGLE, widthWeight = 1.5f),
-            FunctionKey(label = "✓", action = KeyAction.ENTER, widthWeight = 2.5f),
+            FunctionKey(label = "✓", action = KeyAction.ENTER, widthWeight = 2.0f),
         )
 
         return KeyboardLayout(

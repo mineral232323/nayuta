@@ -9,6 +9,8 @@ import android.graphics.Typeface
 import android.util.AttributeSet
 import android.util.TypedValue
 import android.view.HapticFeedbackConstants
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.view.MotionEvent
 import android.view.View
@@ -93,6 +95,18 @@ class FlickKeyboardView @JvmOverloads constructor(
 
     /** 押下開始時刻（長押し判定用）。 */
     private var downTime = 0L
+
+    private val repeatHandler = Handler(Looper.getMainLooper())
+    private var repeatStarted = false
+
+    /** 削除キーを押しっぱなしにしたときの連続削除。 */
+    private val repeatDelete = object : Runnable {
+        override fun run() {
+            repeatStarted = true
+            listener?.onDelete()
+            repeatHandler.postDelayed(this, REPEAT_INTERVAL_MS)
+        }
+    }
 
     /** 直前のタップ位置と時刻（ダブルタップ判定用）。 */
     private var lastTapRow = -1
@@ -304,6 +318,12 @@ class FlickKeyboardView @JvmOverloads constructor(
             MotionEvent.ACTION_DOWN -> {
                 val hit = hitTest(event.x, event.y) ?: return false
                 downTime = event.eventTime
+                // 削除キーは長押しで連続削除
+                val pressedKey = layout.rows.getOrNull(hit.first)?.keys?.getOrNull(hit.second)
+                if (pressedKey is FunctionKey && pressedKey.action == KeyAction.DELETE) {
+                    repeatStarted = false
+                    repeatHandler.postDelayed(repeatDelete, LONG_PRESS_MS)
+                }
                 pressedRow = hit.first
                 pressedCol = hit.second
                 pressedDirection = FlickDirection.CENTER
@@ -338,7 +358,13 @@ class FlickKeyboardView @JvmOverloads constructor(
                 val columnIndex = pressedCol
                 val direction = pressedDirection
                 val longPress = event.eventTime - downTime > LONG_PRESS_MS
+                repeatHandler.removeCallbacks(repeatDelete)
+                val repeated = repeatStarted
+                repeatStarted = false
                 clearPressed()
+                if (repeated) {
+                    return true
+                }
                 if (longPress) {
                     emitLongPress(rowIndex, columnIndex)
                 } else {
@@ -349,6 +375,8 @@ class FlickKeyboardView @JvmOverloads constructor(
             }
 
             MotionEvent.ACTION_CANCEL -> {
+                repeatHandler.removeCallbacks(repeatDelete)
+                repeatStarted = false
                 clearPressed()
                 return true
             }
@@ -473,12 +501,22 @@ class FlickKeyboardView @JvmOverloads constructor(
         invalidate()
     }
 
+    override fun onDetachedFromWindow() {
+        // 連続削除が残らないようにする
+        repeatHandler.removeCallbacks(repeatDelete)
+        repeatStarted = false
+        super.onDetachedFromWindow()
+    }
+
     private companion object {
         /** 長押しとみなす時間。 */
         const val LONG_PRESS_MS = 400L
 
         /** ダブルタップとみなす間隔。 */
         const val DOUBLE_TAP_MS = 300L
+
+        /** 長押しで連続削除するときの間隔。 */
+        const val REPEAT_INTERVAL_MS = 60L
     }
 
     private fun dp(value: Float): Float = TypedValue.applyDimension(
