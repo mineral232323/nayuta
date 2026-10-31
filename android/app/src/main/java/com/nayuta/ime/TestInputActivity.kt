@@ -26,7 +26,7 @@ class TestInputActivity : Activity() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(pad, pad * 3, pad, pad)
-            setBackgroundColor(0xFFF7F8FA.toInt())
+            // 背景色はテーマに任せる（ダーク/ライト両対応のため固定色をやめた）
         }
 
         root.addView(
@@ -50,7 +50,6 @@ class TestInputActivity : Activity() {
                 InputType.TYPE_TEXT_FLAG_MULTI_LINE
             minLines = 6
             setPadding(pad, pad, pad, pad)
-            setBackgroundColor(0xFFFFFFFF.toInt())
         }
         root.addView(
             field,

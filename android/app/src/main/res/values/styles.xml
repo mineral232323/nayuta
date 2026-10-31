@@ -9,4 +9,15 @@
         <item name="android:windowNoTitle">true</item>
         <item name="android:colorAccent">@color/nayuta_accent</item>
     </style>
+
+    <!--
+      設定画面・テスト入力画面などの Activity 用テーマ。
+      IME 用のテーマは背景透明なので、そのまま Activity に使うと
+      ダーク時に「黒背景に黒文字」になって読めなくなる。Activity は
+      不透明な背景を持つテーマを当てる。
+    -->
+    <style name="NayutaActivityTheme" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@android:color/white</item>
+        <item name="android:colorAccent">@color/nayuta_accent</item>
+    </style>
 </resources>
