@@ -405,6 +405,12 @@ class FlickKeyboardView @JvmOverloads constructor(
     /** キーの角丸。Material 3 の medium shape（12dp）に近い値。 */
     private val keyCornerRadius: Float get() = dp(10f)
 
+    /** ダーク/ライト切替の再適用（ラベルの色は描画時に参照しているので背景だけでよい）。 */
+    fun applyTheme() {
+        setBackgroundColor(KeyboardColors.keyboardBackground)
+        invalidate()
+    }
+
     private fun dp(value: Float): Float = TypedValue.applyDimension(
         TypedValue.COMPLEX_UNIT_DIP,
         value,

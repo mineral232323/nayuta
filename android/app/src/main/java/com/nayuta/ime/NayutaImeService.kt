@@ -87,6 +87,8 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
     }
 
     override fun onCreateInputView(): View {
+        // 端末のダークモード設定を反映してから組む
+        KeyboardColors.resolve(this)
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(KeyboardColors.keyboardBackground)
@@ -116,6 +118,16 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
         candidateView = candidates
         keyboardView = keyboard
         return root
+    }
+
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        val wasDark = KeyboardColors.isDark
+        if (KeyboardColors.resolve(this) == wasDark) return
+        // テーマが変わったときだけ塗り直す
+        candidateView?.applyTheme()
+        keyboardView?.applyTheme()
+        (keyboardView?.parent as? View)?.setBackgroundColor(KeyboardColors.keyboardBackground)
     }
 
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {

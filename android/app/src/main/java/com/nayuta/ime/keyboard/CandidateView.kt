@@ -49,6 +49,10 @@ class CandidateView @JvmOverloads constructor(
 
     private val dividerPaint = Paint().apply { color = KeyboardColors.divider }
 
+    /** テーマ切替時に同じ候補を塗り直すために保持する。 */
+    private var lastCandidates: List<String> = emptyList()
+    private var lastSelectedIndex: Int = 0
+
     init {
         isHorizontalScrollBarEnabled = false
         overScrollMode = OVER_SCROLL_NEVER
@@ -60,6 +64,8 @@ class CandidateView @JvmOverloads constructor(
 
     /** 候補を差し替える。[selectedIndex] の候補を選択状態で描く。 */
     fun submit(candidates: List<String>, selectedIndex: Int) {
+        lastCandidates = candidates
+        lastSelectedIndex = selectedIndex
         candidateViews.clear()
         container.removeAllViews()
         if (candidates.isEmpty()) {
@@ -85,6 +91,14 @@ class CandidateView @JvmOverloads constructor(
     }
 
     fun clear() = submit(emptyList(), 0)
+
+    /** ダーク/ライト切替の再適用。 */
+    fun applyTheme() {
+        dividerPaint.color = KeyboardColors.divider
+        setBackgroundColor(KeyboardColors.stripBackground)
+        if (lastCandidates.isNotEmpty()) submit(lastCandidates, lastSelectedIndex)
+        invalidate()
+    }
 
     override fun dispatchDraw(canvas: Canvas) {
         super.dispatchDraw(canvas)
