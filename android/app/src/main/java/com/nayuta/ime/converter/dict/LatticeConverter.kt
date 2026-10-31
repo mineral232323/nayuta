@@ -33,6 +33,12 @@ class LatticeConverter(
     private var userDict: UserDictionary? = null
 
     @Volatile
+    private var english: EnglishLexicon? = null
+
+    @Volatile
+    private var englishTried = false
+
+    @Volatile
     private var bigram: BigramLM? = null
 
     @Volatile
@@ -74,6 +80,17 @@ class LatticeConverter(
         }
     }
 
+    /** カタカナ外来語 → 英単語（あんどろいど → Android）。 */
+    private fun englishLexicon(): EnglishLexicon? {
+        if (englishTried) return english
+        synchronized(this) {
+            if (englishTried) return english
+            english = EnglishLexicon.getOrNull(appContext)
+            englishTried = true
+            return english
+        }
+    }
+
     /** 訂正パネルで登録したユーザー辞書。 */
     private fun userDictionary(): UserDictionary =
         userDict ?: synchronized(this) {
@@ -110,9 +127,14 @@ class LatticeConverter(
                     }
                 }
                 // ユーザー辞書は最優先（コスト 0 で必ず勝つ）
-                val userSurfaces = userDictionary().entries(reading.substring(i, j))
+                val span = reading.substring(i, j)
+                val userSurfaces = userDictionary().entries(span)
                 if (userSurfaces.isNotEmpty()) {
                     for (u in userSurfaces) byStart[i].add(Arc(i, j, u, USER_COST, 0))
+                }
+                // カタカナ外来語は英単語も候補にする（あんどろいど → Android）
+                englishLexicon()?.lookup(span)?.let { en ->
+                    byStart[i].add(Arc(i, j, en, ENGLISH_COST, 0))
                 }
                 j++
             }
@@ -166,6 +188,7 @@ class LatticeConverter(
         val d = dictionary()
         val out = LinkedHashSet<String>()
         userDictionary().entries(reading).forEach { out.add(it) }
+        englishLexicon()?.lookup(reading)?.let { out.add(it) }
         val idx = d.indexOfReading(reading, 0, reading.length)
         if (idx >= 0) {
             val cnt = minOf(d.surfaceCountOf(idx), MAX_CANDIDATES)
@@ -288,6 +311,12 @@ class LatticeConverter(
 
         /** ユーザー辞書の候補コスト。0 なので通常の辞書より必ず優先される。 */
         private const val USER_COST = 0
+
+        /**
+         * カタカナ外来語の英単語候補のコスト。
+         * カタカナ表記より優先されるが、通常の漢字変換よりは弱くしたい値。
+         */
+        private const val ENGLISH_COST = 400
 
         /** 仮説に候補が無かったときの代替 logP。 */
         private const val WORST_LOGPROB = -6.0f
