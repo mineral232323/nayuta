@@ -42,10 +42,14 @@ object KeyboardLayouts {
         FunctionKey(label = label, action = action, widthWeight = weight)
 
     /** 直前の文字を小文字化/濁点化するキー。長押しで半濁点。 */
+    /**
+     * 直前の文字を小文字/濁点に変えるキー。中央グリッド（ま の下）に置くので
+     * 幅は通常キーと同じ 1.0（補助列の AUX ではない）。
+     */
     private val transformKey = FunctionKey(
         label = "小゛",
         action = KeyAction.TRANSFORM,
-        widthWeight = AUX,
+        widthWeight = 1f,
         longPressAction = KeyAction.HANDAKUTEN,
         // 同じキーを短時間に 2 回 → 半濁点（は → ば → ぱ）
         doubleTapAction = KeyAction.HANDAKUTEN,
@@ -58,7 +62,10 @@ object KeyboardLayouts {
         widthWeight = AUX,
     )
 
-    /** 「、」と「。」を統合した句読点キー。 */
+    /**
+     * 「、」と「。」を統合した句読点キー。
+     * 中央グリッド（わ の右）に置くので幅は通常キーと同じ 1.0。
+     */
     private val commaKey = FlickKey(
         label = "、。",
         center = "、",
@@ -66,7 +73,7 @@ object KeyboardLayouts {
         right = "？",
         left = "！",
         down = "・",
-        widthWeight = AUX,
+        widthWeight = 1f,
     )
 
     private val longVowelKey = FlickKey(
