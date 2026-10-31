@@ -47,6 +47,8 @@ object KeyboardLayouts {
         action = KeyAction.TRANSFORM,
         widthWeight = AUX,
         longPressAction = KeyAction.HANDAKUTEN,
+        // 同じキーを短時間に 2 回 → 半濁点（は → ば → ぱ）
+        doubleTapAction = KeyAction.HANDAKUTEN,
     )
 
     /** 変換と空白を兼ねるキー（未確定なら変換、確定済みなら半角スペース）。 */
@@ -56,24 +58,15 @@ object KeyboardLayouts {
         widthWeight = AUX,
     )
 
+    /** 「、」と「。」を統合した句読点キー。 */
     private val commaKey = FlickKey(
-        label = "、",
+        label = "、。",
         center = "、",
         up = "。",
         right = "？",
         left = "！",
         down = "・",
-        // 左の補助列に置くので、他の補助キーと同じ幅にする（列がずれないように）
         widthWeight = AUX,
-    )
-
-    private val periodKey = FlickKey(
-        label = "。",
-        center = "。",
-        up = "、",
-        right = "）",
-        left = "（",
-        down = "・",
     )
 
     private val longVowelKey = FlickKey(
@@ -90,7 +83,7 @@ object KeyboardLayouts {
     private val kanaRows: List<KeyboardRow> = listOf(
         KeyboardRow(
             listOf(
-                transformKey,
+                longVowelKey,
                 gojuon("あ", "い", "う", "え", "お"),
                 gojuon("か", "き", "く", "け", "こ"),
                 gojuon("さ", "し", "す", "せ", "そ"),
@@ -108,7 +101,7 @@ object KeyboardLayouts {
         ),
         KeyboardRow(
             listOf(
-                commaKey,
+                aux("数字", KeyAction.NUMBER_TOGGLE),
                 gojuon("ま", "み", "む", "め", "も"),
                 // や行は や・ゆ・よ のみ。ゆ=う段なので上、よ=お段なので下。
                 FlickKey(label = "や", center = "や", up = "ゆ", down = "よ"),
@@ -119,10 +112,73 @@ object KeyboardLayouts {
         KeyboardRow(
             listOf(
                 aux("あa1", KeyAction.MODE_TOGGLE),
-                longVowelKey,
+                transformKey,
                 // わ行: を=お段なので下、ん・ー は残りへ。
                 FlickKey(label = "わ", center = "わ", up = "ん", right = "ー", down = "を"),
-                periodKey,
+                commaKey,
+                aux("✓", KeyAction.ENTER),
+            ),
+        ),
+    )
+
+    // ---------------- 数字テンキー ----------------
+
+    private fun digit(label: String): FlickKey = FlickKey(label = label, center = label)
+
+    private val numberRows: List<KeyboardRow> = listOf(
+        KeyboardRow(
+            listOf(
+                aux("あa1", KeyAction.KANA_TOGGLE),
+                digit("1"),
+                digit("2"),
+                digit("3"),
+                aux("⌫", KeyAction.DELETE),
+            ),
+        ),
+        KeyboardRow(
+            listOf(
+                aux("◀", KeyAction.CURSOR_LEFT),
+                digit("4"),
+                digit("5"),
+                digit("6"),
+                aux("▶", KeyAction.CURSOR_RIGHT),
+            ),
+        ),
+        KeyboardRow(
+            listOf(
+                FlickKey(
+                    label = ".",
+                    center = ".",
+                    up = "-",
+                    left = "/",
+                    down = ":",
+                    widthWeight = AUX,
+                ),
+                digit("7"),
+                digit("8"),
+                digit("9"),
+                FlickKey(
+                    label = ",",
+                    center = ",",
+                    up = "+",
+                    left = "=",
+                    down = "\\",
+                    widthWeight = AUX,
+                ),
+            ),
+        ),
+        KeyboardRow(
+            listOf(
+                FlickKey(
+                    label = "ー",
+                    center = "ー",
+                    up = "〜",
+                    right = "…",
+                    widthWeight = AUX,
+                ),
+                FlickKey(label = "と", center = "と", up = "を", right = "ん", down = "、"),
+                digit("0"),
+                aux("⏎", KeyAction.ENTER, weight = 1f),
                 aux("✓", KeyAction.ENTER),
             ),
         ),
@@ -189,5 +245,6 @@ object KeyboardLayouts {
     fun forMode(mode: KeyboardMode): KeyboardLayout = when (mode) {
         KeyboardMode.KANA -> KeyboardLayout(kanaRows)
         KeyboardMode.ALPHABET -> KeyboardLayout(alphabetRows)
+        KeyboardMode.NUMBER -> KeyboardLayout(numberRows)
     }
 }

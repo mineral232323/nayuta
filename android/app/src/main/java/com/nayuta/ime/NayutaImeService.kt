@@ -308,6 +308,18 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
         ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER))
     }
 
+    override fun onNumberToggle() {
+        if (state != ComposingState.IDLE) commitCurrent()
+        mode = if (mode == KeyboardMode.NUMBER) KeyboardMode.KANA else KeyboardMode.NUMBER
+        keyboardView?.setLayout(KeyboardLayouts.forMode(mode))
+    }
+
+    override fun onKanaToggle() {
+        if (state != ComposingState.IDLE) commitCurrent()
+        mode = KeyboardMode.KANA
+        keyboardView?.setLayout(KeyboardLayouts.forMode(mode))
+    }
+
     override fun onModeToggle() {
         if (state != ComposingState.IDLE) commitCurrent()
         mode = mode.toggled()
@@ -436,11 +448,16 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
      */
     private fun transformTarget(ch: Char, handakuten: Boolean = false): Char? {
         if (handakuten) {
-            INVERSE_MAP[ch]?.let { return it }
+            // ダブルタップ: は →(1回目) ば →(2回目) ぱ になるよう、
+            // 濁点を一度外してから半濁点を当てる。
+            DAKUTEN_INVERSE[ch]?.let { base -> HANDAKUTEN_MAP[base]?.let { return it } }
+            HANDAKUTEN_INVERSE[ch]?.let { return it }
             HANDAKUTEN_MAP[ch]?.let { return it }
             return null
         }
-        INVERSE_MAP[ch]?.let { return it }
+        SMALL_INVERSE[ch]?.let { return it }
+        DAKUTEN_INVERSE[ch]?.let { return it }
+        HANDAKUTEN_INVERSE[ch]?.let { return it }
         if (ch in SMALL_MAP) return SMALL_MAP[ch]
         if (ch != 'つ' && ch != 'ツ') DAKUTEN_MAP[ch]?.let { return it }
         return null
@@ -544,10 +561,18 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
             }
         }
 
-        /** 濁点・半濁点・小文字を元の文字へ戻す（トグル用）。 */
-        val INVERSE_MAP: Map<Char, Char> = buildMap {
+        /** 濁点を外す。 */
+        val DAKUTEN_INVERSE: Map<Char, Char> = buildMap {
             DAKUTEN_MAP.forEach { (base, voiced) -> put(voiced, base) }
+        }
+
+        /** 半濁点を外す。 */
+        val HANDAKUTEN_INVERSE: Map<Char, Char> = buildMap {
             HANDAKUTEN_MAP.forEach { (base, semi) -> put(semi, base) }
+        }
+
+        /** 小文字を戻す。 */
+        val SMALL_INVERSE: Map<Char, Char> = buildMap {
             SMALL_MAP.forEach { (base, small) -> put(small, base) }
         }
     }

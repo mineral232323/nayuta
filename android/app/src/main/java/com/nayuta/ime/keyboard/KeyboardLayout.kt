@@ -60,6 +60,8 @@ data class FunctionKey(
     override val widthWeight: Float = 1f,
     /** 長押ししたときの動作（例: 小゛キーの長押しで半濁点）。 */
     val longPressAction: KeyAction? = null,
+    /** 短時間に 2 回押したときの動作（例: 小゛キーのダブルタップで半濁点）。 */
+    val doubleTapAction: KeyAction? = null,
 ) : KeySpec()
 
 enum class KeyAction {
@@ -74,8 +76,14 @@ enum class KeyAction {
     /** 直前の 1 文字を、文字種に応じて濁点化 or 小文字化する（トグル）。 */
     TRANSFORM,
 
-    /** 直前の 1 文字を半濁点化する（長押し用）。 */
+    /** 直前の 1 文字を半濁点化する（小゛キーのダブルタップ/長押し用）。 */
     HANDAKUTEN,
+
+    /** かな ⇄ 数字テンキー。 */
+    NUMBER_TOGGLE,
+
+    /** 数字テンキー → かな。 */
+    KANA_TOGGLE,
 }
 
 /** キー 1 個の抽象。 */
@@ -114,7 +122,12 @@ data class KeyboardLayout(val rows: List<KeyboardRow>)
 /** かな入力と英数入力のモード。 */
 enum class KeyboardMode {
     KANA,
-    ALPHABET;
+    ALPHABET,
+    NUMBER;
 
-    fun toggled(): KeyboardMode = if (this == KANA) ALPHABET else KANA
+    fun toggled(): KeyboardMode = when (this) {
+        KANA -> ALPHABET
+        ALPHABET -> KANA
+        NUMBER -> KANA
+    }
 }

@@ -9,6 +9,7 @@ import android.graphics.Typeface
 import android.util.AttributeSet
 import android.util.TypedValue
 import android.view.HapticFeedbackConstants
+import android.os.SystemClock
 import android.view.MotionEvent
 import android.view.View
 import kotlin.math.abs
@@ -45,6 +46,8 @@ class FlickKeyboardView @JvmOverloads constructor(
         fun onEnter()
         fun onTransformPrevious()
         fun onHandakutenPrevious()
+        fun onNumberToggle()
+        fun onKanaToggle()
     }
 
     var listener: Listener? = null
@@ -88,6 +91,11 @@ class FlickKeyboardView @JvmOverloads constructor(
 
     /** 押下開始時刻（長押し判定用）。 */
     private var downTime = 0L
+
+    /** 直前のタップ位置と時刻（ダブルタップ判定用）。 */
+    private var lastTapRow = -1
+    private var lastTapCol = -1
+    private var lastTapTime = 0L
 
     private val flickThresholdPx: Float get() = dp(18f)
 
@@ -406,11 +414,27 @@ class FlickKeyboardView @JvmOverloads constructor(
             KeyAction.ENTER -> listener?.onEnter()
             KeyAction.TRANSFORM -> listener?.onTransformPrevious()
             KeyAction.HANDAKUTEN -> listener?.onHandakutenPrevious()
+            KeyAction.NUMBER_TOGGLE -> listener?.onNumberToggle()
+            KeyAction.KANA_TOGGLE -> listener?.onKanaToggle()
         }
     }
 
     private fun emit(rowIndex: Int, columnIndex: Int, direction: FlickDirection) {
         val key = layout.rows.getOrNull(rowIndex)?.keys?.getOrNull(columnIndex) ?: return
+        // ダブルタップで別動作になるキー（小゛ → 半濁点など）
+        if (key is FunctionKey && key.doubleTapAction != null && direction == FlickDirection.CENTER) {
+            val now = SystemClock.uptimeMillis()
+            val isDouble = rowIndex == lastTapRow &&
+                columnIndex == lastTapCol &&
+                now - lastTapTime <= DOUBLE_TAP_MS
+            lastTapRow = rowIndex
+            lastTapCol = columnIndex
+            lastTapTime = if (isDouble) 0L else now
+            if (isDouble) {
+                dispatch(key.doubleTapAction!!)
+                return
+            }
+        }
         when (key) {
             is FlickKey -> key.output(direction)?.let { listener?.onText(it) }
             is FunctionKey -> dispatch(key.action)
@@ -442,6 +466,9 @@ class FlickKeyboardView @JvmOverloads constructor(
     private companion object {
         /** 長押しとみなす時間。 */
         const val LONG_PRESS_MS = 400L
+
+        /** ダブルタップとみなす間隔。 */
+        const val DOUBLE_TAP_MS = 300L
     }
 
     private fun dp(value: Float): Float = TypedValue.applyDimension(
