@@ -46,8 +46,10 @@ android {
 }
 
 dependencies {
-    // The IME intentionally depends only on the Android framework + Kotlin stdlib,
-    // so this project builds without any AndroidX artifacts.
     implementation(kotlin("stdlib"))
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.31.1")
+
+    // 設定画面を Material Design で組むための依存。
+    // IME 本体（キーボード描画）は framework + 自前 View のままで、こちらには依存しない。
+    implementation("com.google.android.material:material:1.12.0")
 }

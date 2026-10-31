@@ -1,12 +1,12 @@
 package com.nayuta.ime
 
-import android.app.Activity
 import android.os.Bundle
 import android.text.InputType
 import android.view.Gravity
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.appcompat.app.AppCompatActivity
 
 /**
  * キーボードの動作確認用の入力画面。
@@ -17,7 +17,7 @@ import android.widget.TextView
  * 起動: アプリのアイコン、または
  *   adb shell am start -n com.nayuta.ime/.TestInputActivity
  */
-class TestInputActivity : Activity() {
+class TestInputActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

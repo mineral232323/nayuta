@@ -1,8 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- ダークテーマ用。Activity の背景を不透明にしないと文字が読めない。 -->
-    <style name="NayutaActivityTheme" parent="@android:style/Theme.Material.NoActionBar">
+    <!-- ダーク。キーボードの配色（#1E1F22 系）に寄せたニュートラル + 青。 -->
+    <style name="NayutaActivityTheme" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">#A8C7FA</item>
+        <item name="colorOnPrimary">#00214C</item>
+        <item name="colorPrimaryContainer">#0842A0</item>
+        <item name="colorOnPrimaryContainer">#D3E3FD</item>
         <item name="android:windowBackground">#1E1F22</item>
-        <item name="android:colorAccent">@color/nayuta_accent</item>
+        <item name="colorSurface">#1E1F22</item>
+        <item name="colorOnSurface">#E3E3E3</item>
+        <item name="colorSurfaceVariant">#44474F</item>
+        <item name="colorOnSurfaceVariant">#C4C6D0</item>
+        <item name="colorOutline">#8E9099</item>
+        <item name="colorOutlineVariant">#44474F</item>
     </style>
 </resources>

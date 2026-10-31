@@ -16,8 +16,17 @@
       ダーク時に「黒背景に黒文字」になって読めなくなる。Activity は
       不透明な背景を持つテーマを当てる。
     -->
-    <style name="NayutaActivityTheme" parent="@android:style/Theme.Material.Light.NoActionBar">
-        <item name="android:windowBackground">@android:color/white</item>
-        <item name="android:colorAccent">@color/nayuta_accent</item>
+    <style name="NayutaActivityTheme" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">#0B57D0</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="colorPrimaryContainer">#D3E3FD</item>
+        <item name="colorOnPrimaryContainer">#041E49</item>
+        <item name="android:windowBackground">#FCFCFF</item>
+        <item name="colorSurface">#FCFCFF</item>
+        <item name="colorOnSurface">#1B1C1E</item>
+        <item name="colorSurfaceVariant">#E1E2EC</item>
+        <item name="colorOnSurfaceVariant">#44474F</item>
+        <item name="colorOutline">#74777F</item>
+        <item name="colorOutlineVariant">#C4C6D0</item>
     </style>
 </resources>
