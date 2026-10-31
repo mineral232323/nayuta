@@ -357,7 +357,10 @@ class FlickKeyboardView @JvmOverloads constructor(
                 val rowIndex = pressedRow
                 val columnIndex = pressedCol
                 val direction = pressedDirection
-                val longPress = event.eventTime - downTime > LONG_PRESS_MS
+                // 長押し扱いにするのは「指が動いていない（CENTER）とき」だけ。
+                // ゆっくりフリックした場合に方向が捨てられて中央の文字が出るのを防ぐ。
+                val longPress = event.eventTime - downTime > LONG_PRESS_MS &&
+                    direction == FlickDirection.CENTER
                 repeatHandler.removeCallbacks(repeatDelete)
                 val repeated = repeatStarted
                 repeatStarted = false
