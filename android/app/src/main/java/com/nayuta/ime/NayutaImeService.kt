@@ -60,6 +60,15 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
     private val reading = StringBuilder()
 
     private var candidates: List<String> = emptyList()
+
+    /**
+     * ライブ変換のプレビュー。読みは [reading] に貯めたまま、表示だけ変換結果にする。
+     * null のときは読み（かな）をそのまま表示する。
+     */
+    private var livePreview: String? = null
+
+    /** 入力が止まってから変換を発火するまでの待ち時間。 */
+    private var liveJob: Runnable? = null
     private var selectedIndex = 0
     private var state: ComposingState = ComposingState.IDLE
     private var mode: KeyboardMode = KeyboardMode.KANA
@@ -168,8 +177,54 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
 
         candidates = emptyList()
         selectedIndex = 0
+        livePreview = null
         state = if (reading.isEmpty()) ComposingState.IDLE else ComposingState.COMPOSING
         render()
+        scheduleLiveConversion()
+    }
+
+    /** 入力が 500ms 止まったら変換を走らせる（ライブ変換）。 */
+    private fun scheduleLiveConversion() {
+        cancelLiveConversion()
+        if (reading.isEmpty()) return
+        val target = reading.toString()
+        val job = Runnable { startLiveConversion(target) }
+        liveJob = job
+        uiHandler.postDelayed(job, LIVE_CONVERT_DELAY_MS)
+    }
+
+    private fun cancelLiveConversion() {
+        liveJob?.let { uiHandler.removeCallbacks(it) }
+        liveJob = null
+    }
+
+    /**
+     * ライブ変換。読みは保持したまま、表示だけ変換結果に差し替える。
+     * 明示的な「変換」と違い候補ストリップは出さず、確定もしない。
+     */
+    private fun startLiveConversion(target: String) {
+        if (state != ComposingState.COMPOSING) return
+        if (reading.toString() != target) return
+        val engine = converter ?: return
+        val executor = convertExecutor ?: return
+        val generation = ++convertGeneration
+        val contextBefore = contextBeforeCursor()
+
+        executor.execute {
+            val result = try {
+                engine.convert(target, contextBefore)
+            } catch (e: Exception) {
+                android.util.Log.e("NayutaIme", "live convert failed: $target", e)
+                emptyList()
+            }
+            uiHandler.post {
+                if (generation != convertGeneration) return@post
+                if (reading.toString() != target) return@post
+                if (state != ComposingState.COMPOSING) return@post
+                livePreview = result.firstOrNull() ?: target
+                render(candidatesChanged = false)
+            }
+        }
     }
 
     override fun onDelete() {
@@ -178,20 +233,25 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
                 // 変換中に削除 → 読みの編集に戻る
                 candidates = emptyList()
                 selectedIndex = 0
+                livePreview = null
                 state = if (reading.isEmpty()) ComposingState.IDLE else ComposingState.COMPOSING
                 render()
+                scheduleLiveConversion()
             }
 
             ComposingState.COMPOSING -> {
                 if (reading.isNotEmpty()) {
                     reading.deleteCharAt(reading.length - 1)
                 }
+                livePreview = null
                 if (reading.isEmpty()) {
                     candidates = emptyList()
                     selectedIndex = 0
                     state = ComposingState.IDLE
+                    cancelLiveConversion()
                 }
                 render()
+                scheduleLiveConversion()
             }
 
             ComposingState.IDLE -> deleteOneCharBeforeCursor()
@@ -263,6 +323,8 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
      * 別スレッドに投げ、戻ってきたら世代番号で古い結果を捨てる。
      */
     private fun startConversion() {
+        cancelLiveConversion()
+        livePreview = null
         val target = reading.toString()
         if (target.isEmpty()) return
 
@@ -299,7 +361,7 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
     /** 選択中の候補（未変換なら読み）を確定する。 */
     private fun commitCurrent() {
         val ic = currentInputConnection
-        val text = candidates.getOrNull(selectedIndex) ?: reading.toString()
+        val text = candidates.getOrNull(selectedIndex) ?: livePreview ?: reading.toString()
         if (ic != null && text.isNotEmpty()) {
             ic.commitText(text, 1)
         }
@@ -309,7 +371,7 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
     /** 変換対象より前の文脈。COMPSING の読みは文脈から除く。 */
     private fun contextBeforeCursor(maxLength: Int = CONTEXT_MAX_LENGTH): String {
         val ic = currentInputConnection ?: return ""
-        val readingText = reading.toString()
+        val readingText = livePreview ?: reading.toString()
         val before = ic.getTextBeforeCursor(maxLength + readingText.length, 0)?.toString() ?: return ""
         return if (readingText.isNotEmpty() && before.endsWith(readingText)) {
             before.dropLast(readingText.length).takeLast(maxLength)
@@ -331,7 +393,7 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
             }
 
             ComposingState.COMPOSING -> {
-                ic?.setComposingText(reading.toString(), 1)
+                ic?.setComposingText(livePreview ?: reading.toString(), 1)
                 if (candidatesChanged) candidateView?.clear()
             }
 
@@ -349,6 +411,8 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
 
     private fun resetComposing(finishComposing: Boolean) {
         convertGeneration++
+        cancelLiveConversion()
+        livePreview = null
         reading.setLength(0)
         candidates = emptyList()
         selectedIndex = 0
@@ -395,7 +459,9 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
                 reading.setCharAt(reading.length - 1, next)
                 candidates = emptyList()
                 selectedIndex = 0
+                livePreview = null
                 render()
+                scheduleLiveConversion()
             }
 
             ComposingState.CONVERTING -> {
@@ -450,6 +516,9 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
     private companion object {
         /** BERT に渡す文脈の最大文字数（設計書 §5.1: 直前 64 文字）。 */
         const val CONTEXT_MAX_LENGTH = 64
+
+        /** 入力が止まってからライブ変換を発火するまでの時間。 */
+        const val LIVE_CONVERT_DELAY_MS = 500L
 
         val DAKUTEN_MAP: Map<Char, Char> = buildMap {
             val pairs = "かがきぎくぐけげこごさざしじすずせぜそぞただちぢつづてでとどはばひびふぶへべほぼ"
