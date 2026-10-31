@@ -25,7 +25,7 @@ from train.train import load_lexicon  # noqa: E402
 class OnnxModelScorer:
     """配布物（int8 ONNX）をそのまま評価するためのラッパ。"""
 
-    def __init__(self, onnx_path: str, vocab_path: str, k: int = 8):
+    def __init__(self, onnx_path: str, vocab_path: str, k: int = 8, mode: str = "logprob"):
         import onnxruntime as ort
 
         from train.scorer import CharVocab
@@ -33,6 +33,7 @@ class OnnxModelScorer:
         self.sess = ort.InferenceSession(onnx_path, providers=["CPUExecutionProvider"])
         self.vocab = CharVocab(vocab_path)
         self.k = k
+        self.mode = mode
 
     def span_logprobs(self, ctx, read, spans, chunk=256):
         import numpy as np
@@ -72,10 +73,15 @@ class OnnxModelScorer:
                     "cand_mask": cmask,
                 },
             )[0][0]  # (W,K)
-            logits = np.where(cmask[0, :, :, 0] == 0, -1e4, logits)
-            m = logits.max(-1, keepdims=True)
-            lse = m + np.log(np.exp(logits - m).sum(-1, keepdims=True))
-            lp = logits - lse
+            if self.mode == "logit":
+                # 生の logit。候補が 1 件のスパンでも 0 にならないので、
+                # 分割の違いを跨いで比べられる可能性がある。
+                lp = logits
+            else:
+                logits = np.where(cmask[0, :, :, 0] == 0, -1e4, logits)
+                m = logits.max(-1, keepdims=True)
+                lse = m + np.log(np.exp(logits - m).sum(-1, keepdims=True))
+                lp = logits - lse
             for w, (_, _, cands) in enumerate(part):
                 out.append(torch.tensor(lp[w, : len(cands)]))
         return out
@@ -115,6 +121,7 @@ def main() -> None:
     ap.add_argument("--limit", type=int, default=1500)
     ap.add_argument("--betas", default="0.5,1.0,2.0")
     ap.add_argument("--onnx", default="")
+    ap.add_argument("--score-mode", default="logprob", choices=["logprob", "logit"])
     ap.add_argument("--vocab", default="android/app/src/main/assets/model/vocab.txt")
     ap.add_argument("--beam", type=int, default=16)
     ap.add_argument("--want", type=int, default=24)
@@ -122,7 +129,7 @@ def main() -> None:
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if args.onnx:
-        scorer = OnnxModelScorer(args.onnx, args.vocab)
+        scorer = OnnxModelScorer(args.onnx, args.vocab, mode=args.score_mode)
         print(f"scorer: onnx {args.onnx}")
     else:
         scorer = ModelScorer(args.checkpoint, device)
