@@ -61,6 +61,11 @@ class TestInputActivity : AppCompatActivity() {
         )
 
         // 画面下に余白を入れ、キーボードと重ならないようにする
+        root.setOnApplyWindowInsetsListener { v, insets ->
+            val bars = insets.getInsets(android.view.WindowInsets.Type.systemBars())
+            v.setPadding(pad, bars.top + pad, pad, pad)
+            insets
+        }
         setContentView(root)
         field.requestFocus()
     }

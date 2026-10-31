@@ -195,6 +195,13 @@ class SettingsActivity : AppCompatActivity() {
         )
 
         root.addView(ScrollView(this).apply { addView(content) })
+        // Android 15 以降は edge-to-edge が強制されるため、システムバーの
+        // インセットを自前で避ける（ツールバーがステータスバーに潜らないように）
+        root.setOnApplyWindowInsetsListener { v, insets ->
+            val bars = insets.getInsets(android.view.WindowInsets.Type.systemBars())
+            v.setPadding(0, bars.top, 0, bars.bottom)
+            insets
+        }
         setContentView(root)
     }
 
