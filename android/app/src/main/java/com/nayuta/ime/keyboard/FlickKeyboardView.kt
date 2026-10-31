@@ -145,8 +145,9 @@ class FlickKeyboardView @JvmOverloads constructor(
     private fun desiredHeight(): Float {
         val rows = layout.rows
         if (rows.isEmpty()) return dp(240f)
+        val unit = rowUnit * layout.heightScale
         var total = edgePadding * 2
-        rows.forEach { total += rowUnit * it.heightWeight }
+        rows.forEach { total += unit * it.heightWeight }
         total += rowGap * (rows.size - 1)
         return total
     }

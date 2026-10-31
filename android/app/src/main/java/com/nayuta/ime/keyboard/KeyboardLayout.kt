@@ -137,8 +137,16 @@ data class KeyboardRow(
     val heightWeight: Float = 1f,
 )
 
-/** キーボード全体のレイアウト定義。描画は FlickKeyboardView が行う。 */
-data class KeyboardLayout(val rows: List<KeyboardRow>)
+/**
+ * キーボード全体のレイアウト定義。描画は FlickKeyboardView が行う。
+ *
+ * [heightScale] は行の高さの倍率。QWERTY のように 1 行のキーが小さい配列は
+ * 1.0 未満にしてキーボード全体を低くできる。
+ */
+data class KeyboardLayout(
+    val rows: List<KeyboardRow>,
+    val heightScale: Float = 1f,
+)
 
 /** かな入力と英数入力のモード。 */
 enum class KeyboardMode {

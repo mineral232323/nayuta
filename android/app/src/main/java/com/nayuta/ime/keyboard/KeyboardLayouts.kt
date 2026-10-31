@@ -28,6 +28,9 @@ object KeyboardLayouts {
     /** 左右の補助キーの幅比（中央のキーを 1.0 としたとき）。 */
     private const val AUX = 0.72f
 
+    /** 英字・記号ページの行の高さ倍率（かなは 1.0）。 */
+    private const val ALPHA_HEIGHT_SCALE = 0.82f
+
     private fun gojuon(label: String, i: String, u: String, e: String, o: String): FlickKey =
         FlickKey(
             label = label,
@@ -254,6 +257,8 @@ object KeyboardLayouts {
                 KeyboardRow(row2),
                 KeyboardRow(row3),
             ),
+            // 英字はかなより 1 行あたりの高さを低くして、画面を広く使えるようにする
+            heightScale = ALPHA_HEIGHT_SCALE,
         )
     }
 
@@ -296,6 +301,6 @@ object KeyboardLayouts {
         KeyboardMode.KANA -> KeyboardLayout(kanaRows)
         KeyboardMode.ALPHABET -> alphabet(shift = false)
         KeyboardMode.NUMBER -> KeyboardLayout(numberRows)
-        KeyboardMode.SYMBOL -> KeyboardLayout(symbolRows)
+        KeyboardMode.SYMBOL -> KeyboardLayout(symbolRows, heightScale = ALPHA_HEIGHT_SCALE)
     }
 }
