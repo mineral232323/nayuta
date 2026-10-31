@@ -22,10 +22,10 @@ object NayutaSettings {
     // ---- 既定値 ----
     const val DEFAULT_LIVE_DELAY = 500
     const val DEFAULT_ENGLISH = true
-    const val DEFAULT_KEY_HEIGHT = 1        // 0=小 / 1=中 / 2=大
+    const val DEFAULT_KEY_HEIGHT = 2        // 0=小 / 1=中 / 2=大
     const val DEFAULT_VIBRATE = true
     const val DEFAULT_THEME = 0             // 0=システム / 1=ライト / 2=ダーク
-    const val DEFAULT_FLICK_HINT = 0        // 0=標準 / 1=小さめ / 2=非表示
+    const val DEFAULT_FLICK_HINT = 2        // 0=標準 / 1=小さめ / 2=非表示
 
     /** ライブ変換の待ち時間の選択肢（0 はオフ）。 */
     val LIVE_DELAY_OPTIONS = intArrayOf(0, 300, 500, 800, 1000)

@@ -5,7 +5,6 @@ import android.os.Bundle
 import android.view.Gravity
 import android.view.ViewGroup
 import android.widget.LinearLayout
-import android.widget.RadioGroup
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
@@ -15,7 +14,8 @@ import com.google.android.material.card.MaterialCardView
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.divider.MaterialDivider
 import com.google.android.material.materialswitch.MaterialSwitch
-import com.google.android.material.radiobutton.MaterialRadioButton
+import com.google.android.material.textfield.MaterialAutoCompleteTextView
+import com.google.android.material.textfield.TextInputLayout
 import com.nayuta.ime.converter.dict.UserDictionary
 
 /**
@@ -59,11 +59,11 @@ class SettingsActivity : AppCompatActivity() {
         content.addView(sectionHeader("変換"))
         content.addView(
             card {
-                addView(label("ライブ変換（入力が止まってから変換するまで）"))
                 addView(
-                    radioOptions(
-                        items = listOf("オフ", "300ms", "500ms", "800ms", "1秒"),
-                        selected = NayutaSettings.LIVE_DELAY_OPTIONS
+                    dropdown(
+                        "ライブ変換（入力が止まってから変換するまで）",
+                        listOf("オフ", "300ms", "500ms", "800ms", "1秒"),
+                        NayutaSettings.LIVE_DELAY_OPTIONS
                             .indexOf(NayutaSettings.liveDelayMs).coerceAtLeast(0),
                     ) { i -> NayutaSettings.liveDelayMs = NayutaSettings.LIVE_DELAY_OPTIONS[i] },
                 )
@@ -80,18 +80,18 @@ class SettingsActivity : AppCompatActivity() {
         content.addView(sectionHeader("キーボード"))
         content.addView(
             card {
-                addView(label("キーの高さ"))
                 addView(
-                    radioOptions(listOf("小", "中", "大"), NayutaSettings.keyHeightIndex) { i ->
+                    dropdown("キーの高さ", listOf("小", "中", "大"), NayutaSettings.keyHeightIndex) { i ->
                         NayutaSettings.keyHeightIndex = i
                     },
                 )
                 addView(divider())
-                addView(label("フリックのヒント（キー上の小さい文字）"))
                 addView(
-                    radioOptions(listOf("標準", "小さめ", "非表示"), NayutaSettings.flickHintMode) { i ->
-                        NayutaSettings.flickHintMode = i
-                    },
+                    dropdown(
+                        "フリックのヒント（キー上の小さい文字）",
+                        listOf("標準", "小さめ", "非表示"),
+                        NayutaSettings.flickHintMode,
+                    ) { i -> NayutaSettings.flickHintMode = i },
                 )
                 addView(divider())
                 addView(
@@ -100,9 +100,8 @@ class SettingsActivity : AppCompatActivity() {
                     },
                 )
                 addView(divider())
-                addView(label("外観"))
                 addView(
-                    radioOptions(listOf("システム", "ライト", "ダーク"), NayutaSettings.themeMode) { i ->
+                    dropdown("外観", listOf("システム", "ライト", "ダーク"), NayutaSettings.themeMode) { i ->
                         NayutaSettings.themeMode = i
                     },
                 )
@@ -236,65 +235,46 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     /**
-     * ラジオの選択肢。行全体をタップできるようにし、MaterialRadioButton を使う。
-     * RadioGroup は子の ID で排他制御するので、子には一意な ID を振る。
+     * プルダウン（Material の Exposed Dropdown Menu）。
+     * ラベルを上に出し、その下に選択式のフィールドを置く。
      */
-    private fun radioOptions(
+    private fun dropdown(
+        title: String,
         items: List<String>,
         selected: Int,
         onChange: (Int) -> Unit,
-    ): RadioGroup {
-        val ids = items.indices.map { android.view.View.generateViewId() }
-        val group = RadioGroup(this).apply {
-            orientation = RadioGroup.VERTICAL
+    ): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        addView(label(title))
+
+        val field = MaterialAutoCompleteTextView(this@SettingsActivity).apply {
+            inputType = android.text.InputType.TYPE_NULL
+            isCursorVisible = false
+            setSimpleItems(items.toTypedArray())
+            setText(items[selected.coerceIn(0, items.size - 1)], false)
+            setOnItemClickListener { _, _, position, _ -> onChange(position) }
+            // TYPE_NULL だとタップで自動的に開かないので、フォーカスを外して
+            // クリックで開くようにする（欄のどこを押しても開く）
+            isFocusable = false
+            isClickable = true
+            setOnClickListener { showDropDown() }
         }
-        items.forEachIndexed { i, text ->
-            val row = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                minimumHeight = dp(48)
-                isClickable = true
-                isFocusable = true
-                setOnClickListener { group.check(ids[i]) }
-                addView(
-                    MaterialRadioButton(this@SettingsActivity).apply {
-                        id = ids[i]
-                        isChecked = i == selected
-                        isClickable = false
-                        isFocusable = false
-                    },
-                )
-                addView(
-                    TextView(this@SettingsActivity).apply {
-                        this.text = text
-                        setTextAppearance(
-                            com.google.android.material.R.style.TextAppearance_Material3_BodyMedium,
-                        )
-                        setTextColor(
-                            MaterialColors.getColor(
-                                this,
-                                com.google.android.material.R.attr.colorOnSurface,
-                            ),
-                        )
-                        setPadding(dp(4), 0, 0, 0)
-                    },
-                    LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f),
-                )
-            }
-            // 行はカード幅いっぱいに広げる（ラベル部分もタップできるように）
-            group.addView(
-                row,
-                RadioGroup.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                ),
-            )
+        val wrap = TextInputLayout(
+            this@SettingsActivity,
+            null,
+            com.google.android.material.R.attr.textInputOutlinedExposedDropdownMenuStyle,
+        ).apply {
+            setEndIconMode(TextInputLayout.END_ICON_DROPDOWN_MENU)
+            addView(field)
+            setOnClickListener { field.showDropDown() }
         }
-        group.setOnCheckedChangeListener { _, checkedId ->
-            val index = ids.indexOf(checkedId)
-            if (index >= 0) onChange(index)
-        }
-        return group
+        addView(
+            wrap,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { bottomMargin = dp(12) },
+        )
     }
 
     private fun switchRow(text: String, checked: Boolean, onChange: (Boolean) -> Unit): LinearLayout =
