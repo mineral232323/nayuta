@@ -379,22 +379,40 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
         ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, code))
     }
 
+    /**
+     * ✓ / Enter。
+     *
+     * - 未確定（入力中・変換中・ライブ変換のプレビュー中）なら **確定だけ** 行う。
+     *   ここで改行まで入れてしまうと「変換したら改行された」ことになる。
+     * - 何も未確定でないときだけ Enter。単一行の入力欄（検索・送信など）は
+     *   エディタアクションを実行し、複数行なら改行する。
+     */
     override fun onEnter() {
         if (segMode) {
             confirmSegment()
             return
         }
         val ic = currentInputConnection ?: return
-        when (state) {
-            ComposingState.CONVERTING -> commitCurrent()
-            ComposingState.COMPOSING -> {
-                // 変換前なら確定扱い（読みをそのまま出す）
-                commitCurrent()
-            }
-            ComposingState.IDLE -> Unit
+
+        if (state != ComposingState.IDLE) {
+            commitCurrent()
+            return
         }
-        ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER))
-        ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER))
+
+        val imeOptions = currentInputEditorInfo?.imeOptions ?: 0
+        // 複数行の入力欄は IME_FLAG_NO_ENTER_ACTION が立っていて、
+        // Enter は「送信」ではなく「改行」として扱う必要がある。
+        val newlineField = (imeOptions and EditorInfo.IME_FLAG_NO_ENTER_ACTION) != 0
+        val action = imeOptions and EditorInfo.IME_MASK_ACTION
+        if (!newlineField &&
+            action != EditorInfo.IME_ACTION_NONE &&
+            action != EditorInfo.IME_ACTION_UNSPECIFIED
+        ) {
+            ic.performEditorAction(action)
+        } else {
+            ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER))
+            ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER))
+        }
     }
 
     // ------------------------------------------------------------------
