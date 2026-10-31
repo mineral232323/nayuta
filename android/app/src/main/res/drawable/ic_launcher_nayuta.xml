@@ -1,8 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  前景: N のグリフ。左半分は白、右半分は黒で描く（背景と反転させて
-  中央の分割線で文字が入れ替わって見えるようにする）。
-  512 のデザインを 108 にスケールしている（係数 0.2109）。
+  アプリアイコン。左半分が黒地に白の N、右半分が白地に黒の N。
+  512 のデザインを 108 にスケール（係数 0.2109、角丸は 128 → 27）。
 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
@@ -10,11 +9,23 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
+    <!-- 角丸の外形（クリップ用にも使う） -->
+    <path
+        android:name="outline"
+        android:pathData="M27,0 H81 A27,27 0 0 1 108,27 V81 A27,27 0 0 1 81,108 H27 A27,27 0 0 1 0,81 V27 A27,27 0 0 1 27,0 Z"
+        android:fillColor="#09090B" />
+
+    <!-- 右半分を白で塗る -->
+    <group>
+        <clip-path android:pathData="M27,0 H81 A27,27 0 0 1 108,27 V81 A27,27 0 0 1 81,108 H27 A27,27 0 0 1 0,81 V27 A27,27 0 0 1 27,0 Z" />
+        <path
+            android:pathData="M54,0h54v108h-54z"
+            android:fillColor="#FFFFFF" />
+    </group>
+
     <!-- 左半分の N（白） -->
     <group>
-        <clip-path
-            android:name="leftClip"
-            android:pathData="M0,0h54v108h-54z" />
+        <clip-path android:pathData="M0,0h54v108h-54z" />
         <path
             android:pathData="M31.2,78.5 V29.5 L76.8,78.5 V29.5"
             android:strokeColor="#FFFFFF"
@@ -25,9 +36,7 @@
 
     <!-- 右半分の N（黒） -->
     <group>
-        <clip-path
-            android:name="rightClip"
-            android:pathData="M54,0h54v108h-54z" />
+        <clip-path android:pathData="M54,0h54v108h-54z" />
         <path
             android:pathData="M31.2,78.5 V29.5 L76.8,78.5 V29.5"
             android:strokeColor="#09090B"
@@ -36,7 +45,7 @@
             android:strokeLineJoin="miter" />
     </group>
 
-    <!-- 中央の区切りマーク（上は黒、下は白） -->
+    <!-- 中央の区切りマーク -->
     <path
         android:fillColor="#09090B"
         android:pathData="M54,29.5 m-2.1,0 a2.1,2.1 0 1,0 4.2,0 a2.1,2.1 0 1,0 -4.2,0" />
