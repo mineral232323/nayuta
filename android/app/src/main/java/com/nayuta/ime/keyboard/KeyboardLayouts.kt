@@ -3,13 +3,17 @@ package com.nayuta.ime.keyboard
 /**
  * キー配列の定義テーブル。Gboard の 12 キーに寄せた **5 列 × 4 行** 構成。
  *
+ * かなモード:
  * ```
- *  ◀    あ  か  さ   ⌫
- *  ▶    た  な  は   ゛
- *  小   ま  や  ら   変換
- *  あa1 空白 わ  ?!  ✓
+ *  小゛    あ  か  さ   ⌫
+ *  ◀       た  な  は   ▶
+ *  、      ま  や  ら   変換(空白)
+ *  あa1   ー  わ  。   ✓
  * ```
- * 左右の細い列が補助キー、中央 3 列がかなの 12 キー。
+ * - 左右の細い列が補助キー。`た` の左に左矢印、`は` の右に右矢印を置いている。
+ * - `小゛` は **直前の 1 文字を変換する**キー。文字の種類で濁点か小文字かを決める
+ *   （か→が、あ→ぁ、つ→っ）。長押しで半濁点（は→ぱ）。
+ * - `変換(空白)` は 1 キー。未確定なら変換、確定済みなら半角スペース。
  *
  * 母音は **中央=あ / 左=い / 上=う / 右=え / 下=お**（市販のフリック入力と同じ）:
  * ```
@@ -37,28 +41,23 @@ object KeyboardLayouts {
     private fun aux(label: String, action: KeyAction, weight: Float = AUX): FunctionKey =
         FunctionKey(label = label, action = action, widthWeight = weight)
 
-    private val smallKey = FlickKey(
-        label = "小",
-        center = "っ",
-        up = "ゅ",
-        right = "ぁ",
-        left = "ゃ",
-        down = "ょ",
+    /** 直前の文字を小文字化/濁点化するキー。長押しで半濁点。 */
+    private val transformKey = FunctionKey(
+        label = "小゛",
+        action = KeyAction.TRANSFORM,
+        widthWeight = AUX,
+        longPressAction = KeyAction.HANDAKUTEN,
+    )
+
+    /** 変換と空白を兼ねるキー（未確定なら変換、確定済みなら半角スペース）。 */
+    private val convertOrSpaceKey = FunctionKey(
+        label = "変換",
+        action = KeyAction.SPACE,
         widthWeight = AUX,
     )
 
-    private val dakutenKey = FlickKey(
-        label = KanaMarks.DAKUTEN,
-        center = KanaMarks.DAKUTEN,
-        up = KanaMarks.HANDAKUTEN,
-        right = "、",
-        left = "。",
-        down = "・",
-        widthWeight = AUX,
-    )
-
-    private val symbolKey = FlickKey(
-        label = "?!",
+    private val commaKey = FlickKey(
+        label = "、",
         center = "、",
         up = "。",
         right = "？",
@@ -66,12 +65,30 @@ object KeyboardLayouts {
         down = "・",
     )
 
+    private val periodKey = FlickKey(
+        label = "。",
+        center = "。",
+        up = "、",
+        right = "）",
+        left = "（",
+        down = "・",
+    )
+
+    private val longVowelKey = FlickKey(
+        label = "ー",
+        center = "ー",
+        up = "〜",
+        right = "…",
+        left = "「",
+        down = "」",
+    )
+
     // ---------------- かな ----------------
 
     private val kanaRows: List<KeyboardRow> = listOf(
         KeyboardRow(
             listOf(
-                aux("◀", KeyAction.CURSOR_LEFT),
+                transformKey,
                 gojuon("あ", "い", "う", "え", "お"),
                 gojuon("か", "き", "く", "け", "こ"),
                 gojuon("さ", "し", "す", "せ", "そ"),
@@ -80,30 +97,30 @@ object KeyboardLayouts {
         ),
         KeyboardRow(
             listOf(
-                aux("▶", KeyAction.CURSOR_RIGHT),
+                aux("◀", KeyAction.CURSOR_LEFT),
                 gojuon("た", "ち", "つ", "て", "と"),
                 gojuon("な", "に", "ぬ", "ね", "の"),
                 gojuon("は", "ひ", "ふ", "へ", "ほ"),
-                dakutenKey,
+                aux("▶", KeyAction.CURSOR_RIGHT),
             ),
         ),
         KeyboardRow(
             listOf(
-                smallKey,
+                commaKey,
                 gojuon("ま", "み", "む", "め", "も"),
                 // や行は や・ゆ・よ のみ。ゆ=う段なので上、よ=お段なので下。
                 FlickKey(label = "や", center = "や", up = "ゆ", down = "よ"),
                 gojuon("ら", "り", "る", "れ", "ろ"),
-                aux("変換", KeyAction.CONVERT),
+                convertOrSpaceKey,
             ),
         ),
         KeyboardRow(
             listOf(
                 aux("あa1", KeyAction.MODE_TOGGLE),
-                aux("空白", KeyAction.SPACE, weight = 1f),
+                longVowelKey,
                 // わ行: を=お段なので下、ん・ー は残りへ。
                 FlickKey(label = "わ", center = "わ", up = "ん", right = "ー", down = "を"),
-                symbolKey,
+                periodKey,
                 aux("✓", KeyAction.ENTER),
             ),
         ),
@@ -117,7 +134,7 @@ object KeyboardLayouts {
     private val alphabetRows: List<KeyboardRow> = listOf(
         KeyboardRow(
             listOf(
-                aux("◀", KeyAction.CURSOR_LEFT),
+                FlickKey(label = ",", center = ",", up = ";", right = ":", left = "?", down = "!"),
                 alphaKey("ABC", "a", "b", "c"),
                 alphaKey("DEF", "d", "e", "f"),
                 alphaKey("GHI", "g", "h", "i"),
@@ -126,28 +143,28 @@ object KeyboardLayouts {
         ),
         KeyboardRow(
             listOf(
-                aux("▶", KeyAction.CURSOR_RIGHT),
+                aux("◀", KeyAction.CURSOR_LEFT),
                 alphaKey("JKL", "j", "k", "l"),
                 alphaKey("MNO", "m", "n", "o"),
                 alphaKey("PQR", "p", "q", "r"),
-                aux("、", KeyAction.CONVERT),
+                aux("▶", KeyAction.CURSOR_RIGHT),
             ),
         ),
         KeyboardRow(
             listOf(
-                aux("。", KeyAction.CONVERT),
+                FlickKey(label = ".", center = ".", up = "-", down = "/"),
                 alphaKey("STU", "s", "t", "u"),
                 alphaKey("VWX", "v", "w", "x"),
                 alphaKey("YZ", "y", "z", null),
-                aux("変換", KeyAction.CONVERT),
+                convertOrSpaceKey,
             ),
         ),
         KeyboardRow(
             listOf(
                 aux("aA1", KeyAction.MODE_TOGGLE),
-                aux("空白", KeyAction.SPACE, weight = 1f),
-                FlickKey(label = "@", center = "@", up = "_", right = "-", down = "/"),
-                symbolKey,
+                FlickKey(label = "@", center = "@", up = "_", right = "#"),
+                FlickKey(label = "_", center = "_", up = "=", right = "+"),
+                FlickKey(label = "/", center = "/", up = "\\", right = "|"),
                 aux("✓", KeyAction.ENTER),
             ),
         ),

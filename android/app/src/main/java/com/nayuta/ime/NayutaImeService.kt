@@ -363,6 +363,60 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
     // ヘルパ
     // ------------------------------------------------------------------
 
+    /**
+     * 直前の 1 文字を変換する。文字の種類で濁点か小文字かを決める。
+     *
+     * - か/さ/た/は行（つ を除く）→ 濁点（か→が）
+     * - それ以外（あ/や/わ行・つ）→ 小文字（あ→ぁ、つ→っ）
+     * - すでに濁点・小文字なら元に戻す（同じキーでトグル）
+     */
+    private fun transformTarget(ch: Char, handakuten: Boolean = false): Char? {
+        if (handakuten) {
+            INVERSE_MAP[ch]?.let { return it }
+            HANDAKUTEN_MAP[ch]?.let { return it }
+            return null
+        }
+        INVERSE_MAP[ch]?.let { return it }
+        if (ch in SMALL_MAP) return SMALL_MAP[ch]
+        if (ch != 'つ' && ch != 'ツ') DAKUTEN_MAP[ch]?.let { return it }
+        return null
+    }
+
+    override fun onHandakutenPrevious() = transformPrevious(handakuten = true)
+
+    override fun onTransformPrevious() = transformPrevious(handakuten = false)
+
+    private fun transformPrevious(handakuten: Boolean) {
+        when (state) {
+            ComposingState.COMPOSING -> {
+                if (reading.isEmpty()) return
+                val last = reading[reading.length - 1]
+                val next = transformTarget(last, handakuten) ?: return
+                reading.setCharAt(reading.length - 1, next)
+                candidates = emptyList()
+                selectedIndex = 0
+                render()
+            }
+
+            ComposingState.CONVERTING -> {
+                commitCurrent()
+                transformCommitted(handakuten)
+            }
+
+            ComposingState.IDLE -> transformCommitted(handakuten)
+        }
+    }
+
+    /** 確定済みテキストの直前 1 文字を置き換える（未確定の読みが無いとき）。 */
+    private fun transformCommitted(handakuten: Boolean) {
+        val ic = currentInputConnection ?: return
+        val before = ic.getTextBeforeCursor(1, 0)?.toString().orEmpty()
+        if (before.length != 1) return
+        val next = transformTarget(before[0], handakuten) ?: return
+        ic.deleteSurroundingText(1, 0)
+        ic.commitText(next.toString(), 1)
+    }
+
     private fun applyMark(map: Map<Char, Char>, fallback: Char) {
         if (reading.isEmpty()) {
             reading.append(fallback)
@@ -388,7 +442,8 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
         ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_DEL))
     }
 
-    private fun spaceForMode(): String = if (mode == KeyboardMode.KANA) "　" else " "
+    /** 空白は常に半角。変換キーと同居するため、未確定時は変換として働く。 */
+    private fun spaceForMode(): String = " "
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
@@ -409,6 +464,22 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
             for (i in pairs.indices step 2) {
                 put(pairs[i], pairs[i + 1])
             }
+        }
+
+        /** 小書きにできるかな。 */
+        val SMALL_MAP: Map<Char, Char> = buildMap {
+            val pairs = "あぁいぃうぅえぇおぉつっやゃゆゅよょわゎ" +
+                "アァイィウゥエェオォツッヤャユュヨョワヮ"
+            for (i in pairs.indices step 2) {
+                put(pairs[i], pairs[i + 1])
+            }
+        }
+
+        /** 濁点・半濁点・小文字を元の文字へ戻す（トグル用）。 */
+        val INVERSE_MAP: Map<Char, Char> = buildMap {
+            DAKUTEN_MAP.forEach { (base, voiced) -> put(voiced, base) }
+            HANDAKUTEN_MAP.forEach { (base, semi) -> put(semi, base) }
+            SMALL_MAP.forEach { (base, small) -> put(small, base) }
         }
     }
 }

@@ -58,6 +58,8 @@ data class FunctionKey(
     override val label: String,
     val action: KeyAction,
     override val widthWeight: Float = 1f,
+    /** 長押ししたときの動作（例: 小゛キーの長押しで半濁点）。 */
+    val longPressAction: KeyAction? = null,
 ) : KeySpec()
 
 enum class KeyAction {
@@ -68,6 +70,12 @@ enum class KeyAction {
     CURSOR_LEFT,
     CURSOR_RIGHT,
     ENTER,
+
+    /** 直前の 1 文字を、文字種に応じて濁点化 or 小文字化する（トグル）。 */
+    TRANSFORM,
+
+    /** 直前の 1 文字を半濁点化する（長押し用）。 */
+    HANDAKUTEN,
 }
 
 /** キー 1 個の抽象。 */

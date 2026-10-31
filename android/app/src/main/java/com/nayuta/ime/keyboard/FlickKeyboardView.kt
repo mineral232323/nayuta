@@ -43,6 +43,8 @@ class FlickKeyboardView @JvmOverloads constructor(
         fun onModeToggle()
         fun onCursorMove(left: Boolean)
         fun onEnter()
+        fun onTransformPrevious()
+        fun onHandakutenPrevious()
     }
 
     var listener: Listener? = null
@@ -83,6 +85,9 @@ class FlickKeyboardView @JvmOverloads constructor(
     private var downX = 0f
     private var downY = 0f
     private var activePointerId = MotionEvent.INVALID_POINTER_ID
+
+    /** 押下開始時刻（長押し判定用）。 */
+    private var downTime = 0L
 
     private val flickThresholdPx: Float get() = dp(18f)
 
@@ -286,6 +291,7 @@ class FlickKeyboardView @JvmOverloads constructor(
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 val hit = hitTest(event.x, event.y) ?: return false
+                downTime = event.eventTime
                 pressedRow = hit.first
                 pressedCol = hit.second
                 pressedDirection = FlickDirection.CENTER
@@ -319,8 +325,13 @@ class FlickKeyboardView @JvmOverloads constructor(
                 val rowIndex = pressedRow
                 val columnIndex = pressedCol
                 val direction = pressedDirection
+                val longPress = event.eventTime - downTime > LONG_PRESS_MS
                 clearPressed()
-                emit(rowIndex, columnIndex, direction)
+                if (longPress) {
+                    emitLongPress(rowIndex, columnIndex)
+                } else {
+                    emit(rowIndex, columnIndex, direction)
+                }
                 performClick()
                 return true
             }
@@ -373,19 +384,36 @@ class FlickKeyboardView @JvmOverloads constructor(
         return null
     }
 
+    /** 長押し時の動作。未定義なら通常の入力をそのまま行う。 */
+    private fun emitLongPress(rowIndex: Int, columnIndex: Int) {
+        val key = layout.rows.getOrNull(rowIndex)?.keys?.getOrNull(columnIndex)
+        val action = (key as? FunctionKey)?.longPressAction
+        if (action != null) {
+            dispatch(action)
+        } else {
+            emit(rowIndex, columnIndex, FlickDirection.CENTER)
+        }
+    }
+
+    private fun dispatch(action: KeyAction) {
+        when (action) {
+            KeyAction.DELETE -> listener?.onDelete()
+            KeyAction.CONVERT -> listener?.onConvert()
+            KeyAction.SPACE -> listener?.onSpace()
+            KeyAction.MODE_TOGGLE -> listener?.onModeToggle()
+            KeyAction.CURSOR_LEFT -> listener?.onCursorMove(left = true)
+            KeyAction.CURSOR_RIGHT -> listener?.onCursorMove(left = false)
+            KeyAction.ENTER -> listener?.onEnter()
+            KeyAction.TRANSFORM -> listener?.onTransformPrevious()
+            KeyAction.HANDAKUTEN -> listener?.onHandakutenPrevious()
+        }
+    }
+
     private fun emit(rowIndex: Int, columnIndex: Int, direction: FlickDirection) {
         val key = layout.rows.getOrNull(rowIndex)?.keys?.getOrNull(columnIndex) ?: return
         when (key) {
             is FlickKey -> key.output(direction)?.let { listener?.onText(it) }
-            is FunctionKey -> when (key.action) {
-                KeyAction.DELETE -> listener?.onDelete()
-                KeyAction.CONVERT -> listener?.onConvert()
-                KeyAction.SPACE -> listener?.onSpace()
-                KeyAction.MODE_TOGGLE -> listener?.onModeToggle()
-                KeyAction.CURSOR_LEFT -> listener?.onCursorMove(left = true)
-                KeyAction.CURSOR_RIGHT -> listener?.onCursorMove(left = false)
-                KeyAction.ENTER -> listener?.onEnter()
-            }
+            is FunctionKey -> dispatch(key.action)
         }
     }
 
@@ -409,6 +437,11 @@ class FlickKeyboardView @JvmOverloads constructor(
     fun applyTheme() {
         setBackgroundColor(KeyboardColors.keyboardBackground)
         invalidate()
+    }
+
+    private companion object {
+        /** 長押しとみなす時間。 */
+        const val LONG_PRESS_MS = 400L
     }
 
     private fun dp(value: Float): Float = TypedValue.applyDimension(
