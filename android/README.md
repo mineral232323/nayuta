@@ -65,13 +65,47 @@ private fun create(context: Context): Converter {
 あ(あいうえお)  か(かきくけこ)  さ(さしすせそ)
 た(たちつてと)  な(なにぬねの)  は(はひふへほ)
 ま(まみむめも)  や(や ゆ よ)    ら(らりるれろ)
-わ(わをんー、)  小(っゃゅょぁ)  ゛(゛゜、。・)
+わ(わをんー)    小(っゃゅょぁ)  ゛(゛゜、。・)
 [英数] [空白] [変換] [削除]
 ```
 
-フリック方向は 上=2 番目 / 右=3 番目 / 左=4 番目 / 下=5 番目。
-や行は「や・ゆ・よ」しかないため上下左右の未使用方向は無入力。
-英数モードは電話機の 12 キー英字配列（ABC/DEF/GHI …）。
+フリックは母音の並びに合わせて **左=い / 上=う / 右=え / 下=お**:
+
+```
+       う
+  い ← あ → え
+       お
+```
+
+つまり 中央=あ / 左=い / 上=う / 右=え / 下=お。
+や行は「や・ゆ・よ」しかないため未使用方向は無入力（ゆ=上、よ=下）。
+わ行は を=下（お段）、ん=上、ー=右。
+英数モードは電話機の 12 キー英字配列（ABC/DEF/GHI …、タップ=1 文字目 / 上=2 / 右=3 / 左=4）。
+
+### デザイン（Gboard / Material 3）
+
+見た目は Gboard と Google の Material 3（Material You）に合わせている。
+色は [keyboard/KeyboardColors.kt](app/src/main/java/com/nayuta/ime/keyboard/KeyboardColors.kt)
+に Material のカラーロール名でまとまっている。
+
+| ロール | 値 | 用途 |
+|---|---|---|
+| surfaceContainer | `#F1F3F4` | キーボードの地 |
+| surface | `#F8F9FA` | 候補ストリップの地 |
+| surfaceContainerLowest | `#FFFFFF` | キー（角丸 10dp） |
+| surfaceContainerHigh | `#E6E8EB` | 機能キー（英数 / 空白 / 変換 / 削除） |
+| primary (state layer 12%) | `#E8F0FE` | 押下中のキー |
+| primary | `#0B57D0` | 押下中のフリック方向のサブラベル |
+| primaryContainer / onPrimaryContainer | `#D3E3FD` / `#041E49` | 選択中の候補ピル |
+| outlineVariant | `#E3E6EA` | ストリップ境界の hairline |
+
+- タイポグラフィ: かなは sans-serif 20sp、機能キーは sans-serif-medium 13.5sp、
+  サブラベル 11sp（押下中は primary 色・13sp・medium）、候補 16sp。
+- 寸法: 4dp グリッド。行の基準高 50dp、機能行 48dp、キー間 4dp、外周 4dp。
+  キーの角丸 10dp（M3 medium shape）、候補ピルは高さ 40dp の完全な角丸。
+- 押下中はキーが primary の状態レイヤーで薄く青くなり、上に白い角丸ポップアップ
+  （影 3 層 + outline）が出る。機能キーは Gboard 同様ポップアップを出さない。
+- 候補ストリップは 48dp（M3 の最小タップ領域）。非選択候補はタップでリップル。
 
 ## 実機で使う
 

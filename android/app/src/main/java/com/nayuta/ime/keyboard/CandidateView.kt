@@ -1,7 +1,13 @@
 package com.nayuta.ime.keyboard
 
 import android.content.Context
+import android.content.res.ColorStateList
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.RippleDrawable
 import android.util.AttributeSet
 import android.util.TypedValue
 import android.view.Gravity
@@ -11,11 +17,16 @@ import android.widget.LinearLayout
 import android.widget.TextView
 
 /**
- * 変換候補の横スクロールバー。
+ * 変換候補の横スクロールストリップ（Gboard のサジェスチョン行に相当）。
  *
- * 候補 1 件 = 1 つの TextView を横に並べるだけの素直な作り。
- * タップで [onCandidateSelected] を呼び、確定はサービス側が行う。
- * 候補が空のときは高さを食わないよう GONE になる。
+ * Material 3 のレイアウト:
+ * - 地は [KeyboardColors.stripBackground]（キーより一段明るい surface 面）
+ * - 候補は 16sp のラベル。選択中だけ primaryContainer 色のピルで強調
+ * - 非選択候補はタップ時にリップル（状態レイヤー）が出る
+ * - 下端に hairline を 1 本入れてキーボード面と区切る
+ *
+ * 候補 1 件 = 1 つの TextView。タップで [onCandidateSelected] を呼び、確定は
+ * サービス側が行う。候補が空のときは高さを食わないよう GONE になる。
  */
 class CandidateView @JvmOverloads constructor(
     context: Context,
@@ -28,15 +39,21 @@ class CandidateView @JvmOverloads constructor(
     private val container = LinearLayout(context).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
-        setPadding(dp(4f).toInt(), 0, dp(4f).toInt(), 0)
+        setPadding(dp(6f).toInt(), 0, dp(6f).toInt(), 0)
     }
 
     private val candidateViews = mutableListOf<TextView>()
 
+    private val sans = Typeface.create("sans-serif", Typeface.NORMAL)
+    private val sansMedium = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+
+    private val dividerPaint = Paint().apply { color = KeyboardColors.divider }
+
     init {
         isHorizontalScrollBarEnabled = false
         overScrollMode = OVER_SCROLL_NEVER
-        setBackgroundColor(KeyboardColors.candidateBackground)
+        isFillViewport = false
+        setBackgroundColor(KeyboardColors.stripBackground)
         addView(container, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT))
         visibility = View.GONE
     }
@@ -69,18 +86,25 @@ class CandidateView @JvmOverloads constructor(
 
     fun clear() = submit(emptyList(), 0)
 
+    override fun dispatchDraw(canvas: Canvas) {
+        super.dispatchDraw(canvas)
+        // キーボード面との境界に hairline を 1 本
+        val hairline = dp(1f)
+        canvas.drawRect(0f, height - hairline, width.toFloat(), height.toFloat(), dividerPaint)
+    }
+
     private fun buildItem(text: String, index: Int, selected: Boolean): TextView =
         TextView(context).apply {
             this.text = text
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
             gravity = Gravity.CENTER
-            setPadding(dp(18f).toInt(), 0, dp(18f).toInt(), 0)
+            setPadding(dp(16f).toInt(), 0, dp(16f).toInt(), 0)
             minWidth = dp(56f).toInt()
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(40f).toInt(),
             ).apply {
-                marginEnd = dp(4f).toInt()
+                marginEnd = dp(2f).toInt()
             }
             isClickable = true
             applySelection(this, selected)
@@ -91,15 +115,25 @@ class CandidateView @JvmOverloads constructor(
 
     private fun applySelection(view: TextView, selected: Boolean) {
         if (selected) {
+            // primaryContainer のピル + onPrimaryContainer の文字
             view.setTextColor(KeyboardColors.candidateSelectedText)
-            view.background = GradientDrawable().apply {
-                cornerRadius = dp(10f)
-                setColor(KeyboardColors.candidateSelectedBackground)
-            }
+            view.typeface = sansMedium
+            view.background = pill(KeyboardColors.candidateSelectedBackground)
         } else {
             view.setTextColor(KeyboardColors.candidateText)
-            view.background = null
+            view.typeface = sans
+            // 状態レイヤー（リップル）だけを持つ背景。ピル形状に切り抜く。
+            view.background = RippleDrawable(
+                ColorStateList.valueOf(KeyboardColors.ripple),
+                null,
+                pill(Color.WHITE),
+            )
         }
+    }
+
+    private fun pill(color: Int): GradientDrawable = GradientDrawable().apply {
+        cornerRadius = dp(20f)
+        setColor(color)
     }
 
     private fun dp(value: Float): Float = TypedValue.applyDimension(

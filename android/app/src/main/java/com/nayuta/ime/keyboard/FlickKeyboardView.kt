@@ -2,6 +2,7 @@ package com.nayuta.ime.keyboard
 
 import android.content.Context
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Typeface
@@ -19,9 +20,13 @@ import kotlin.math.hypot
  * 配列の知識は一切持たず、[KeyboardLayouts] が渡す [KeyboardLayout] を
  * そのまま矩形に並べて描くだけにしてある（配列の変更はテーブル側だけで完結する）。
  *
- * - 押下中はキーをハイライトし、フリック方向が確定したらサブかなを強調する
- * - 押しているキーの上に、選択中の文字を出した吹き出し（ポップアップ）を描く
- * - フリック判定は移動距離 [flickThresholdDp] を超えてから、上下左右のうち
+ * 見た目は Gboard（Material 3）に寄せている:
+ * - 白い角丸キー + ライトグレーの地、機能キーは一段暗いトーンで区別
+ * - 押下は primary の状態レイヤー（薄いブルー）、フリック方向が決まったら
+ *   そのサブラベルを primary 色・少し大きめ・太字で強調
+ * - 押しているキーの上に、選択中の文字を出した白い角丸ポップアップ（影 + 輪郭）
+ * - 機能キーはポップアップを出さない（Gboard と同じ）
+ * - フリック判定は移動距離 [flickThresholdPx] を超えてから、上下左右のうち
  *   移動量が大きい軸で決める（8 方向ではなく 4 方向）
  */
 class FlickKeyboardView @JvmOverloads constructor(
@@ -45,22 +50,28 @@ class FlickKeyboardView @JvmOverloads constructor(
     /** rows × cols の矩形。layout かサイズが変わったときだけ作り直す。 */
     private val keyRects = mutableListOf<MutableList<RectF>>()
 
+    // ---- Material 3 のタイポグラフィ ----
+    private val sans = Typeface.create("sans-serif", Typeface.NORMAL)
+    private val sansMedium = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+
     private val keyPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val shadowPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val outlinePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
     private val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
-        typeface = Typeface.DEFAULT
+        typeface = sans
     }
     private val subLabelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
-        typeface = Typeface.DEFAULT
+        typeface = sans
     }
     private val functionLabelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
-        typeface = Typeface.DEFAULT_BOLD
+        typeface = sansMedium
     }
-    private val balloonPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    private val balloonTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
-        typeface = Typeface.DEFAULT_BOLD
+        typeface = sansMedium
     }
 
     // ---- 押下状態 ----
@@ -101,9 +112,9 @@ class FlickKeyboardView @JvmOverloads constructor(
     private fun desiredHeight(): Float {
         val rows = layout.rows
         if (rows.isEmpty()) return dp(240f)
-        var total = dp(5f) * 2
-        rows.forEach { total += dp(52f) * it.heightWeight }
-        total += dp(5f) * (rows.size - 1)
+        var total = edgePadding * 2
+        rows.forEach { total += rowUnit * it.heightWeight }
+        total += rowGap * (rows.size - 1)
         return total
     }
 
@@ -117,26 +128,23 @@ class FlickKeyboardView @JvmOverloads constructor(
         if (width <= 0 || height <= 0) return
         val rows = layout.rows
         if (rows.isEmpty()) return
-        val hPad = dp(5f)
-        val vPad = dp(5f)
-        val gap = dp(5f)
         val totalWeight = rows.sumOf { it.heightWeight.toDouble() }.toFloat().coerceAtLeast(0.01f)
-        val usableHeight = height - 2 * vPad - gap * (rows.size - 1)
+        val usableHeight = height - 2 * edgePadding - rowGap * (rows.size - 1)
         val unit = usableHeight / totalWeight
-        var y = vPad
+        var y = edgePadding
         rows.forEach { row ->
             val columns = row.keys.size.coerceAtLeast(1)
             val rowHeight = unit * row.heightWeight
-            val usableWidth = width - 2 * hPad - gap * (columns - 1)
+            val usableWidth = width - 2 * edgePadding - rowGap * (columns - 1)
             val cellWidth = usableWidth / columns
             val rects = mutableListOf<RectF>()
-            var x = hPad
+            var x = edgePadding
             repeat(columns) {
                 rects.add(RectF(x, y, x + cellWidth, y + rowHeight))
-                x += cellWidth + gap
+                x += cellWidth + rowGap
             }
             keyRects.add(rects)
-            y += rowHeight + gap
+            y += rowHeight + rowGap
         }
     }
 
@@ -147,13 +155,11 @@ class FlickKeyboardView @JvmOverloads constructor(
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         if (keyRects.isEmpty()) rebuildRects(width, height)
-        val corner = dp(7f)
         layout.rows.forEachIndexed { rowIndex, row ->
             row.keys.forEachIndexed { columnIndex, key ->
                 val rect = keyRects.getOrNull(rowIndex)?.getOrNull(columnIndex) ?: return@forEachIndexed
                 val isPressedKey = rowIndex == pressedRow && columnIndex == pressedCol
-                keyPaint.color = if (isPressedKey) KeyboardColors.keyPressed else KeyboardColors.key
-                canvas.drawRoundRect(rect, corner, corner, keyPaint)
+                drawKeyBackground(canvas, rect, key, isPressedKey)
                 when (key) {
                     is FlickKey -> drawFlickKey(canvas, rect, key, isPressedKey)
                     is FunctionKey -> drawFunctionKey(canvas, rect, key)
@@ -163,29 +169,40 @@ class FlickKeyboardView @JvmOverloads constructor(
         drawBalloonIfNeeded(canvas)
     }
 
+    private fun drawKeyBackground(canvas: Canvas, rect: RectF, key: KeySpec, isPressedKey: Boolean) {
+        keyPaint.color = when {
+            key is FunctionKey && isPressedKey -> KeyboardColors.functionKeyPressed
+            key is FunctionKey -> KeyboardColors.functionKey
+            isPressedKey -> KeyboardColors.keyPressed
+            else -> KeyboardColors.key
+        }
+        canvas.drawRoundRect(rect, keyCornerRadius, keyCornerRadius, keyPaint)
+    }
+
     private fun drawFlickKey(canvas: Canvas, rect: RectF, key: FlickKey, isPressedKey: Boolean) {
         val centerX = rect.centerX()
         val centerY = rect.centerY()
 
-        labelPaint.textSize = sp(19f)
+        labelPaint.textSize = sp(20f)
         labelPaint.color = KeyboardColors.keyText
         canvas.drawText(key.label, centerX, baselineFor(labelPaint, centerY), labelPaint)
 
-        subLabelPaint.textSize = sp(11f)
         key.subLabels.forEach { (direction, text) ->
             val active = isPressedKey && direction == pressedDirection
+            subLabelPaint.textSize = sp(if (active) 13f else 11f)
             subLabelPaint.color = if (active) {
                 KeyboardColors.keySubTextActive
             } else {
                 KeyboardColors.keySubText
             }
-            val position = subLabelCenter(rect, direction)
-            canvas.drawText(text, position.first, baselineFor(subLabelPaint, position.second), subLabelPaint)
+            subLabelPaint.typeface = if (active) sansMedium else sans
+            val (x, y) = subLabelCenter(rect, direction)
+            canvas.drawText(text, x, baselineFor(subLabelPaint, y), subLabelPaint)
         }
     }
 
     private fun drawFunctionKey(canvas: Canvas, rect: RectF, key: FunctionKey) {
-        functionLabelPaint.textSize = sp(15f)
+        functionLabelPaint.textSize = sp(13.5f)
         functionLabelPaint.color = KeyboardColors.keyText
         canvas.drawText(
             key.label,
@@ -195,37 +212,57 @@ class FlickKeyboardView @JvmOverloads constructor(
         )
     }
 
+    /**
+     * 押しているフリックキーの上に、選択中の文字を出す Gboard 風ポップアップ。
+     * 影は半透明の角丸を 3 枚重ねて近似している（ハードウェア描画でも ShadowLayer に
+     * 頼らず済むようにするため）。
+     */
     private fun drawBalloonIfNeeded(canvas: Canvas) {
         val row = layout.rows.getOrNull(pressedRow) ?: return
-        val key = row.keys.getOrNull(pressedCol) ?: return
+        val key = row.keys.getOrNull(pressedCol) as? FlickKey ?: return
         val anchor = keyRects.getOrNull(pressedRow)?.getOrNull(pressedCol) ?: return
-        val text = balloonTextFor(key) ?: return
+        val text = key.output(pressedDirection) ?: return
 
-        balloonPaint.textSize = sp(18f)
-        val horizontalPadding = dp(13f)
-        val balloonHeight = dp(38f)
-        val width = balloonPaint.measureText(text) + horizontalPadding * 2
+        balloonTextPaint.textSize = sp(21f)
+        val horizontalPadding = dp(16f)
+        val balloonHeight = dp(44f)
+        val width = balloonTextPaint.measureText(text) + horizontalPadding * 2
         val maxLeft = (this.width - width - dp(4f)).coerceAtLeast(dp(4f))
         val left = (anchor.centerX() - width / 2).coerceIn(dp(4f), maxLeft)
-        // 最上段のキーでは上に出すと画面外になるので、キーの上端に重ねて表示する。
-        val above = anchor.top - balloonHeight - dp(8f)
-        val top = if (above >= 0f) above else anchor.top + dp(6f)
+        // 最上段のキーでは上に出すと画面外になるので、キーの上端付近に重ねる。
+        val top = (anchor.top - balloonHeight - dp(8f)).coerceAtLeast(dp(2f))
         val bubble = RectF(left, top, left + width, top + balloonHeight)
+        val radius = dp(13f)
+
+        // 影（3 層の半透明角丸）
+        for (layer in 3 downTo 1) {
+            val grow = dp(1.2f) * layer
+            shadowPaint.color = KeyboardColors.balloonShadow
+            canvas.drawRoundRect(
+                bubble.left - grow,
+                bubble.top - grow + dp(1.5f),
+                bubble.right + grow,
+                bubble.bottom + grow + dp(1.5f),
+                radius + grow,
+                radius + grow,
+                shadowPaint,
+            )
+        }
 
         keyPaint.color = KeyboardColors.balloonBackground
-        canvas.drawRoundRect(bubble, dp(9f), dp(9f), keyPaint)
-        balloonPaint.color = KeyboardColors.balloonText
+        canvas.drawRoundRect(bubble, radius, radius, keyPaint)
+
+        outlinePaint.color = KeyboardColors.balloonOutline
+        outlinePaint.strokeWidth = dp(0.7f)
+        canvas.drawRoundRect(bubble, radius, radius, outlinePaint)
+
+        balloonTextPaint.color = KeyboardColors.balloonText
         canvas.drawText(
             text,
             bubble.centerX(),
-            baselineFor(balloonPaint, bubble.centerY()),
-            balloonPaint,
+            baselineFor(balloonTextPaint, bubble.centerY()),
+            balloonTextPaint,
         )
-    }
-
-    private fun balloonTextFor(key: KeySpec): String? = when (key) {
-        is FlickKey -> key.output(pressedDirection) ?: key.label
-        is FunctionKey -> key.label
     }
 
     private fun subLabelCenter(rect: RectF, direction: FlickDirection): Pair<Float, Float> = when (direction) {
@@ -345,8 +382,20 @@ class FlickKeyboardView @JvmOverloads constructor(
     }
 
     // ------------------------------------------------------------------
-    // 単位変換ヘルパ
+    // 寸法・単位変換
     // ------------------------------------------------------------------
+
+    /** 1 行ぶんの基準高さ（heightWeight = 1 のとき）。 */
+    private val rowUnit: Float get() = dp(50f)
+
+    /** キー間のすき間。Material の 4dp グリッド。 */
+    private val rowGap: Float get() = dp(4f)
+
+    /** キーボード外周の余白。 */
+    private val edgePadding: Float get() = dp(4f)
+
+    /** キーの角丸。Material 3 の medium shape（12dp）に近い値。 */
+    private val keyCornerRadius: Float get() = dp(10f)
 
     private fun dp(value: Float): Float = TypedValue.applyDimension(
         TypedValue.COMPLEX_UNIT_DIP,

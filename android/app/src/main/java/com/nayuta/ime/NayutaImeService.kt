@@ -102,7 +102,8 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
 
         root.addView(
             candidates,
-            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(44)),
+            // Gboard のサジェスチョン行と同じ 48dp（Material の最小タップ領域）
+            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(48)),
         )
         root.addView(
             keyboard,

@@ -1,6 +1,15 @@
 package com.nayuta.ime.keyboard
 
-/** フリック方向。標準的な 12 キー日本語配列では CENTER=母音 a / i / u / e / o。 */
+/**
+ * フリック方向。
+ *
+ * 12 キーかな配列の母音は **中央=あ / 左=い / 上=う / 右=え / 下=お**:
+ * ```
+ *        う
+ *   い ← あ → え
+ *        お
+ * ```
+ */
 enum class FlickDirection {
     CENTER,
     UP,
@@ -11,9 +20,9 @@ enum class FlickDirection {
 
 /**
  * フリック入力できるキー。`label` はキー上に大きく出す表示、
- * CENTER 以外の出力はサブ（上=2 番目, 右=3 番目, 左=4 番目, 下=5 番目）に対応する。
+ * CENTER 以外の出力は母音の並び（左=い / 上=う / 右=え / 下=お）に対応する。
  *
- * 例: あ行 -> CENTER あ / UP い / RIGHT う / LEFT え / DOWN お
+ * 例: あ行 -> CENTER あ / LEFT い / UP う / RIGHT え / DOWN お
  */
 data class FlickKey(
     override val label: String,
