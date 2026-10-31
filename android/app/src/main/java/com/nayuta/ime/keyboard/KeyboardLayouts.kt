@@ -8,7 +8,7 @@ package com.nayuta.ime.keyboard
  *  小゛    あ  か  さ   ⌫
  *  ◀       た  な  は   ▶
  *  、      ま  や  ら   変換(空白)
- *  あa1   ー  わ  。   ✓
+ *  あa   ー  わ  。   ✓
  * ```
  * - 左右の細い列が補助キー。`た` の左に左矢印、`は` の右に右矢印を置いている。
  * - `小゛` は **直前の 1 文字を変換する**キー。文字の種類で濁点か小文字かを決める
@@ -126,7 +126,7 @@ object KeyboardLayouts {
         ),
         KeyboardRow(
             listOf(
-                aux("あa1", KeyAction.MODE_TOGGLE),
+                aux("あa", KeyAction.MODE_TOGGLE),
                 transformKey,
                 // わ行: を=お段なので下、ん・ー は残りへ。
                 FlickKey(label = "わ", center = "わ", up = "ん", right = "ー", down = "を"),
@@ -149,7 +149,7 @@ object KeyboardLayouts {
     private val numberRows: List<KeyboardRow> = listOf(
         KeyboardRow(
             listOf(
-                numAux("あa1", KeyAction.KANA_TOGGLE),
+                numAux("あa", KeyAction.KANA_TOGGLE),
                 digit("1"),
                 digit("2"),
                 digit("3"),
@@ -240,9 +240,9 @@ object KeyboardLayouts {
         ) + "zxcvbnm".map { letter(it) } + listOf(
             FunctionKey(label = "⌫", action = KeyAction.DELETE, widthWeight = 1.5f),
         )
-        // 下段: あa1 / , / 空白 / . / 123 / ✓ （合計 10）
+        // 下段: あa / , / 空白 / . / 123 / ✓ （合計 10）
         val row3 = listOf(
-            FunctionKey(label = "あa1", action = KeyAction.MODE_TOGGLE, widthWeight = 1.5f),
+            FunctionKey(label = "あa", action = KeyAction.MODE_TOGGLE, widthWeight = 1.5f),
             FlickKey(label = ",", center = ",", widthWeight = 1.0f),
             FunctionKey(label = "空白", action = KeyAction.SPACE, widthWeight = 3.0f),
             FlickKey(label = ".", center = ".", widthWeight = 1.0f),
@@ -272,7 +272,7 @@ object KeyboardLayouts {
     //  1 2 3 4 5 6 7 8 9 0
     //  @ # ¥ % & - + ( ) /
     //  ABC * " ' : ; ! ?  ⌫
-    //  あa1  ,   空白   .   ⏎
+    //  あa  ,   空白   .   ⏎
     private fun symbolKey(label: String): FlickKey = FlickKey(label = label, center = label)
 
     private val symbolRows: List<KeyboardRow> = listOf(
@@ -293,7 +293,7 @@ object KeyboardLayouts {
         ),
         KeyboardRow(
             listOf(
-                FunctionKey(label = "あa1", action = KeyAction.KANA_TOGGLE, widthWeight = 1.7f),
+                FunctionKey(label = "あa", action = KeyAction.KANA_TOGGLE, widthWeight = 1.7f),
                 symbolKey(","),
                 FunctionKey(label = "空白", action = KeyAction.SPACE, widthWeight = 5.0f),
                 symbolKey("."),
