@@ -16,4 +16,12 @@ class KanaConverter : Converter {
         // 「今は入力をそのままひらがなで返すだけ」
         return listOf(reading)
     }
+
+    override fun candidatesFor(reading: String): List<String> =
+        if (reading.isEmpty()) emptyList() else listOf(reading)
+
+    override fun segments(reading: String, context: String): List<Segment> {
+        if (reading.isEmpty()) return emptyList()
+        return listOf(Segment(0, reading.length, listOf(reading)))
+    }
 }

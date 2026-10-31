@@ -20,4 +20,25 @@ package com.nayuta.ime.converter
  */
 interface Converter {
     fun convert(reading: String, context: String): List<String>
+
+    /**
+     * 読みを単語単位に区切り、各語の候補を返す（単語ごとの変換モード用）。
+     *
+     * `convert()` が「文章全体の候補」を返すのに対し、こちらは
+     * 「どこで区切るか」と「各語の候補」を返す。UI 側は選択中の語の候補だけを出す。
+     */
+    fun segments(reading: String, context: String): List<Segment>
+
+    /** 読み 1 語分の表記候補（区切りを手動で変えたときの引き直しに使う）。 */
+    fun candidatesFor(reading: String): List<String>
 }
+
+/**
+ * 単語 1 つ分。[start] / [end] は読み文字列の添字。
+ * [candidates] はその語の表記候補（優先順）。
+ */
+data class Segment(
+    val start: Int,
+    val end: Int,
+    val candidates: List<String>,
+)

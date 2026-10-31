@@ -3,6 +3,7 @@ package com.nayuta.ime.converter.dict
 import android.content.Context
 import android.util.Log
 import com.nayuta.ime.converter.Converter
+import com.nayuta.ime.converter.Segment
 import com.nayuta.ime.converter.bert.BertScorer
 
 /**
@@ -90,8 +91,8 @@ class LatticeConverter(
         }
     }
 
-    override fun convert(reading: String, context: String): List<String> {
-        if (reading.isEmpty()) return emptyList()
+    /** 探索 + BERT 再ランク。変換と単語分割の両方で使う共通処理。 */
+    private fun rankedPaths(reading: String, context: String): List<List<Arc>> {
         val d = dictionary()
         val n = reading.length
         val byStart = Array(n) { ArrayList<Arc>() }
@@ -118,22 +119,22 @@ class LatticeConverter(
             byStart[i].add(Arc(i, i + 1, reading.substring(i, i + 1), d.unknownCost, 0))
         }
 
-        val t0 = System.currentTimeMillis()
         val paths = nbest(n, byStart, beam = BEAM, want = WANT)
-        if (paths.isEmpty()) return listOf(reading)
-        val searchMs = System.currentTimeMillis() - t0
-
-        val s = scorerOrNull()
-        val ranked = if (s != null) {
-            try {
-                rerank(s, context, reading, paths)
-            } catch (e: Throwable) {
-                Log.e("NayutaBert", "rerank failed", e)
-                paths
-            }
-        } else {
+        if (paths.isEmpty()) return emptyList()
+        val s = scorerOrNull() ?: return paths
+        return try {
+            rerank(s, context, reading, paths)
+        } catch (e: Throwable) {
+            Log.e("NayutaBert", "rerank failed", e)
             paths
         }
+    }
+
+    override fun convert(reading: String, context: String): List<String> {
+        if (reading.isEmpty()) return emptyList()
+        val t0 = System.currentTimeMillis()
+        val ranked = rankedPaths(reading, context)
+        if (ranked.isEmpty()) return listOf(reading)
 
         val out = LinkedHashSet<String>()
         for (p in ranked) {
@@ -142,10 +143,44 @@ class LatticeConverter(
         }
         Log.d(
             "NayutaConv",
-            "reading=$reading best=${out.firstOrNull()} paths=${paths.size} " +
-                "search=${searchMs}ms total=${System.currentTimeMillis() - t0}ms",
+            "reading=$reading best=${out.firstOrNull()} total=${System.currentTimeMillis() - t0}ms",
         )
         return out.toList()
+    }
+
+    override fun segments(reading: String, context: String): List<Segment> {
+        if (reading.isEmpty()) return emptyList()
+        val best = rankedPaths(reading, context).firstOrNull() ?: return emptyList()
+        if (best.isEmpty()) return emptyList()
+        return best.map { a ->
+            Segment(a.start, a.end, candidatesFor(reading.substring(a.start, a.end)))
+        }
+    }
+
+    /**
+     * 読み 1 語分の候補。ユーザー辞書 → 辞書 → カタカナ → ひらがな の順。
+     * 単語モードで「区切りを変えた」ときに引き直すのにも使う。
+     */
+    override fun candidatesFor(reading: String): List<String> {
+        if (reading.isEmpty()) return emptyList()
+        val d = dictionary()
+        val out = LinkedHashSet<String>()
+        userDictionary().entries(reading).forEach { out.add(it) }
+        val idx = d.indexOfReading(reading, 0, reading.length)
+        if (idx >= 0) {
+            val cnt = minOf(d.surfaceCountOf(idx), MAX_CANDIDATES)
+            for (k in 0 until cnt) out.add(d.surfaceOf(idx, k))
+        }
+        out.add(hira2kata(reading))
+        out.add(reading)
+        return out.toList()
+    }
+
+    private fun hira2kata(s: String): String = buildString {
+        for (ch in s) {
+            val o = ch.code
+            append(if (o in 0x3041..0x3096) (o + 0x60).toChar() else ch)
+        }
     }
 
     // ------------------------------------------------------------------

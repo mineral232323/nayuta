@@ -2,6 +2,10 @@ package com.nayuta.ime
 
 import android.inputmethodservice.InputMethodService
 import android.os.Handler
+import android.text.SpannableStringBuilder
+import android.text.Spanned
+import android.text.style.BackgroundColorSpan
+import android.text.style.UnderlineSpan
 import android.os.Looper
 import android.view.KeyEvent
 import android.view.View
@@ -77,6 +81,16 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
     private var correcting = false
     private var correctReading = ""
     private var correctingFromComposing = false
+
+    // ---- 単語ごとの変換モード ----
+    private var segMode = false
+    private var segReading = ""
+    private val segBounds = ArrayList<Int>()
+    private val segCands = ArrayList<List<String>>()
+    private val segSel = ArrayList<Int>()
+    private val segTouched = ArrayList<Boolean>()
+    private var segActive = 0
+    private var segGeneration = 0
 
     /** 直前に確定した語（訂正の対象）。 */
     private var lastCommittedReading: String? = null
@@ -196,6 +210,7 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
             correctionView?.append(text)
             return
         }
+        if (segMode) exitSegmentMode()
         if (state == ComposingState.CONVERTING) commitCurrent()
 
         when (text) {
@@ -215,6 +230,7 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
     /** 入力が 500ms 止まったら変換を走らせる（ライブ変換）。 */
     private fun scheduleLiveConversion() {
         cancelLiveConversion()
+        if (segMode) return
         if (reading.isEmpty()) return
         val target = reading.toString()
         val job = Runnable { startLiveConversion(target) }
@@ -261,6 +277,7 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
             correctionView?.deleteLast()
             return
         }
+        if (segMode) exitSegmentMode()
         when (state) {
             ComposingState.CONVERTING -> {
                 // 変換中に削除 → 読みの編集に戻る
@@ -293,6 +310,10 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
 
     override fun onConvert() {
         if (correcting) return
+        if (segMode) {
+            cycleSegmentCandidate()
+            return
+        }
         when (state) {
             ComposingState.CONVERTING -> {
                 if (candidates.size > 1) {
@@ -301,25 +322,34 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
                 }
             }
 
-            ComposingState.COMPOSING -> startConversion()
+            ComposingState.COMPOSING -> startSegmentMode()
             ComposingState.IDLE -> Unit
         }
     }
 
     override fun onSpace() {
+        if (correcting) return
+        if (segMode) {
+            cycleSegmentCandidate()
+            return
+        }
         when (state) {
             ComposingState.CONVERTING -> {
                 commitCurrent()
                 insertText(spaceForMode())
             }
 
-            // かな入力中は空白キー = 変換（一般的な日本語 IME の挙動）
-            ComposingState.COMPOSING -> startConversion()
+            // かな入力中は空白キー = 変換（単語ごとの変換モードに入る）
+            ComposingState.COMPOSING -> startSegmentMode()
             ComposingState.IDLE -> insertText(spaceForMode())
         }
     }
 
     override fun onCursorMove(left: Boolean) {
+        if (segMode) {
+            adjustSegmentBoundary(left)
+            return
+        }
         val ic = currentInputConnection ?: return
         // 変換中なら確定してから動かす（編集中の読みを壊さない）
         if (state != ComposingState.IDLE) commitCurrent()
@@ -329,6 +359,10 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
     }
 
     override fun onEnter() {
+        if (segMode) {
+            confirmSegment()
+            return
+        }
         val ic = currentInputConnection ?: return
         when (state) {
             ComposingState.CONVERTING -> commitCurrent()
@@ -342,11 +376,186 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
         ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER))
     }
 
+    // ------------------------------------------------------------------
+    // 単語ごとの変換モード
+    // ------------------------------------------------------------------
+
+    /** 保留中の読みを単語に区切り、先頭の語を選択状態にする。 */
+    private fun startSegmentMode() {
+        val target = reading.toString()
+        android.util.Log.d("NayutaSeg", "start target=$target state=$state")
+        if (target.isEmpty()) return
+        val engine = converter ?: return
+        val executor = convertExecutor ?: return
+        cancelLiveConversion()
+        val gen = ++segGeneration
+        val ctx = contextBeforeCursor()
+
+        executor.execute {
+            val segs = try {
+                engine.segments(target, ctx)
+            } catch (e: Exception) {
+                emptyList()
+            }
+            uiHandler.post {
+                if (gen != segGeneration) return@post
+                if (reading.toString() != target) return@post
+
+                segBounds.clear()
+                segBounds.add(0)
+                for (sg in segs) {
+                    if (sg.start == segBounds.last() && sg.end > sg.start) segBounds.add(sg.end)
+                }
+                if (segBounds.last() != target.length) segBounds.add(target.length)
+                android.util.Log.d("NayutaSeg", "segs=${segs.size} bounds=$segBounds")
+                if (segBounds.size < 2) return@post
+
+                segReading = target
+                segCands.clear(); segSel.clear(); segTouched.clear()
+                for (i in 0 until segBounds.size - 1) {
+                    segCands.add(candidatesOf(target, i))
+                    segSel.add(0)
+                    segTouched.add(false)
+                }
+                segActive = 0
+                segMode = true
+                livePreview = null
+                renderSegmentMode()
+            }
+        }
+    }
+
+    private fun candidatesOf(target: String, i: Int): List<String> {
+        val part = target.substring(segBounds[i], segBounds[i + 1])
+        val c = converter?.candidatesFor(part).orEmpty()
+        return if (c.isEmpty()) listOf(part) else c
+    }
+
+    /** 選択中の語だけ下線＋薄い背景でハイライトしてアプリ側に出す。 */
+    private fun renderSegmentMode() {
+        val ic = currentInputConnection ?: return
+        if (!segMode || segCands.isEmpty()) return
+        val sb = SpannableStringBuilder()
+        for (i in segCands.indices) {
+            val surface = segCands[i].getOrNull(segSel[i])
+                ?: segReading.substring(segBounds[i], segBounds[i + 1])
+            val start = sb.length
+            sb.append(surface)
+            if (i == segActive && sb.length > start) {
+                sb.setSpan(
+                    BackgroundColorSpan(0x330B57D0),
+                    start, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE,
+                )
+                sb.setSpan(UnderlineSpan(), start, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
+        }
+        ic.setComposingText(sb, 1)
+        val cur = segCands[segActive]
+        candidateView?.submit(cur, segSel[segActive].coerceIn(0, cur.size - 1))
+    }
+
+    /** 選択中の語の長さ（区切り）を 1 文字単位で変える。 */
+    private fun adjustSegmentBoundary(left: Boolean) {
+        android.util.Log.d("NayutaSeg", "adjust left=$left segMode=$segMode active=$segActive")
+        if (!segMode || segCands.isEmpty()) return
+        val i = segActive
+        if (left) {
+            if (segBounds[i + 1] - segBounds[i] > 1) {
+                segBounds[i + 1] -= 1
+                // 最後の語を縮めたときは、はみ出した分を新しい語として足す
+                if (i == segCands.size - 1 && segBounds[i + 1] < segReading.length) {
+                    segBounds.add(segReading.length)
+                    segCands.add(emptyList())
+                    segSel.add(0)
+                    segTouched.add(false)
+                }
+                refreshSegment(i)
+                if (i + 1 < segCands.size) refreshSegment(i + 1)
+                segTouched[i] = true
+                renderSegmentMode()
+            } else if (i > 0) {
+                segActive = i - 1
+                renderSegmentMode()
+            }
+        } else {
+            if (segBounds[i + 1] < segReading.length) {
+                segBounds[i + 1] += 1
+                refreshSegment(i)
+                if (i + 1 < segCands.size) refreshSegment(i + 1)
+                segTouched[i] = true
+                // 次の語が空になったら詰める
+                if (i + 1 < segCands.size && segBounds[i + 2] == segBounds[i + 1]) {
+                    segBounds.removeAt(i + 1)
+                    segCands.removeAt(i + 1)
+                    segSel.removeAt(i + 1)
+                    segTouched.removeAt(i + 1)
+                }
+                renderSegmentMode()
+            } else if (i < segCands.size - 1) {
+                segActive = i + 1
+                renderSegmentMode()
+            }
+        }
+    }
+
+    private fun cycleSegmentCandidate() {
+        if (segCands.isEmpty()) return
+        val cur = segCands[segActive]
+        if (cur.size > 1) {
+            segSel[segActive] = (segSel[segActive] + 1) % cur.size
+            segTouched[segActive] = true
+        }
+        renderSegmentMode()
+    }
+
+    private fun refreshSegment(i: Int) {
+        if (i < 0 || i >= segCands.size) return
+        segCands[i] = candidatesOf(segReading, i)
+        segSel[i] = 0
+    }
+
+    /** 確定して次の語へ。最後の語なら全体を確定する。 */
+    private fun confirmSegment() {
+        if (!segMode || segCands.isEmpty()) return
+        if (segActive < segCands.size - 1) {
+            segActive++
+            renderSegmentMode()
+        } else {
+            commitSegments()
+        }
+    }
+
+    private fun commitSegments() {
+        val ic = currentInputConnection
+        val out = buildString {
+            for (i in segCands.indices) append(segCands[i].getOrNull(segSel[i]) ?: "")
+        }
+        if (ic != null && out.isNotEmpty()) ic.commitText(out, 1)
+
+        // 手で直した語だけ学習する（そのまま候補1位を選んだ語は覚えない）
+        val ud = UserDictionary.get(applicationContext)
+        for (i in segCands.indices) {
+            if (!segTouched.getOrElse(i) { false }) continue
+            val r = segReading.substring(segBounds[i], segBounds[i + 1])
+            val s = segCands[i].getOrNull(segSel[i]) ?: continue
+            if (r.isNotEmpty() && s.isNotEmpty()) ud.add(r, s)
+        }
+        exitSegmentMode()
+        resetComposing(finishComposing = true)
+    }
+
+    private fun exitSegmentMode() {
+        segMode = false
+        segCands.clear(); segBounds.clear(); segSel.clear(); segTouched.clear()
+        segActive = 0
+    }
+
     /**
      * 訂正。いま変換しようとしている語（または直前に確定した語）を
      * パネルに出し、表記を直してユーザー辞書へ登録できるようにする。
      */
     override fun onCorrect() {
+        if (segMode) exitSegmentMode()
         if (correcting) {
             closeCorrection()
             return
@@ -508,6 +717,10 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
     // ------------------------------------------------------------------
 
     private fun render(candidatesChanged: Boolean = true) {
+        if (segMode) {
+            renderSegmentMode()
+            return
+        }
         val ic = currentInputConnection
         when (state) {
             ComposingState.IDLE -> {
@@ -534,6 +747,8 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
 
     private fun resetComposing(finishComposing: Boolean) {
         convertGeneration++
+        segGeneration++
+        exitSegmentMode()
         cancelLiveConversion()
         closeCorrection()
         livePreview = null
