@@ -700,6 +700,16 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
     }
 
     private fun selectCandidate(index: Int) {
+        // 単語モード: 候補をタップしたら、その語を選んで次の語へ進む
+        if (segMode) {
+            if (segCands.isEmpty()) return
+            val cur = segCands[segActive]
+            if (cur.isEmpty()) return
+            segSel[segActive] = index.coerceIn(0, cur.size - 1)
+            segTouched[segActive] = true
+            confirmSegment()
+            return
+        }
         if (state != ComposingState.CONVERTING) return
         if (candidates.isEmpty()) return
         selectedIndex = index.coerceIn(0, candidates.size - 1)
