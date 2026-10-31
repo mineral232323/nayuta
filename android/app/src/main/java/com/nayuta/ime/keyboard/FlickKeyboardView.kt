@@ -48,6 +48,7 @@ class FlickKeyboardView @JvmOverloads constructor(
         fun onHandakutenPrevious()
         fun onNumberToggle()
         fun onKanaToggle()
+        fun onCorrect()
     }
 
     var listener: Listener? = null
@@ -416,6 +417,7 @@ class FlickKeyboardView @JvmOverloads constructor(
             KeyAction.HANDAKUTEN -> listener?.onHandakutenPrevious()
             KeyAction.NUMBER_TOGGLE -> listener?.onNumberToggle()
             KeyAction.KANA_TOGGLE -> listener?.onKanaToggle()
+            KeyAction.CORRECT -> listener?.onCorrect()
         }
     }
 

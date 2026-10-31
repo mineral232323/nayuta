@@ -84,6 +84,9 @@ enum class KeyAction {
 
     /** 数字テンキー → かな。 */
     KANA_TOGGLE,
+
+    /** 変換候補の訂正（未実装・予約）。 */
+    CORRECT,
 }
 
 /** キー 1 個の抽象。 */

@@ -308,6 +308,15 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
         ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER))
     }
 
+    override fun onCorrect() {
+        // TODO: 変換候補の訂正（学習・再変換）をここに実装する
+        android.widget.Toast.makeText(
+            this,
+            "訂正機能は準備中です",
+            android.widget.Toast.LENGTH_SHORT,
+        ).show()
+    }
+
     override fun onNumberToggle() {
         if (state != ComposingState.IDLE) commitCurrent()
         mode = if (mode == KeyboardMode.NUMBER) KeyboardMode.KANA else KeyboardMode.NUMBER
