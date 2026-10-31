@@ -41,6 +41,8 @@ class FlickKeyboardView @JvmOverloads constructor(
         fun onConvert()
         fun onSpace()
         fun onModeToggle()
+        fun onCursorMove(left: Boolean)
+        fun onEnter()
     }
 
     var listener: Listener? = null
@@ -136,10 +138,13 @@ class FlickKeyboardView @JvmOverloads constructor(
             val columns = row.keys.size.coerceAtLeast(1)
             val rowHeight = unit * row.heightWeight
             val usableWidth = width - 2 * edgePadding - rowGap * (columns - 1)
-            val cellWidth = usableWidth / columns
+            val weightSum = row.keys.sumOf { it.widthWeight.toDouble() }.toFloat()
+                .coerceAtLeast(0.01f)
+            val unitWidth = usableWidth / weightSum
             val rects = mutableListOf<RectF>()
             var x = edgePadding
-            repeat(columns) {
+            row.keys.forEach { key ->
+                val cellWidth = unitWidth * key.widthWeight
                 rects.add(RectF(x, y, x + cellWidth, y + rowHeight))
                 x += cellWidth + rowGap
             }
@@ -377,6 +382,9 @@ class FlickKeyboardView @JvmOverloads constructor(
                 KeyAction.CONVERT -> listener?.onConvert()
                 KeyAction.SPACE -> listener?.onSpace()
                 KeyAction.MODE_TOGGLE -> listener?.onModeToggle()
+                KeyAction.CURSOR_LEFT -> listener?.onCursorMove(left = true)
+                KeyAction.CURSOR_RIGHT -> listener?.onCursorMove(left = false)
+                KeyAction.ENTER -> listener?.onEnter()
             }
         }
     }

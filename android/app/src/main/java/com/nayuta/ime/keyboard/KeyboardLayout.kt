@@ -31,6 +31,7 @@ data class FlickKey(
     val right: String? = null,
     val left: String? = null,
     val down: String? = null,
+    override val widthWeight: Float = 1f,
 ) : KeySpec() {
 
     /** 指定方向の出力。未定義方向は null（= 何も入力しない）。 */
@@ -56,6 +57,7 @@ data class FlickKey(
 data class FunctionKey(
     override val label: String,
     val action: KeyAction,
+    override val widthWeight: Float = 1f,
 ) : KeySpec()
 
 enum class KeyAction {
@@ -63,11 +65,17 @@ enum class KeyAction {
     CONVERT,
     SPACE,
     MODE_TOGGLE,
+    CURSOR_LEFT,
+    CURSOR_RIGHT,
+    ENTER,
 }
 
 /** キー 1 個の抽象。 */
+
+/** キー 1 個の抽象。`widthWeight` は行内での横幅比（左右の補助キーを細くする）。 */
 sealed class KeySpec {
     abstract val label: String
+    abstract val widthWeight: Float
 }
 
 /**

@@ -213,6 +213,29 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
         }
     }
 
+    override fun onCursorMove(left: Boolean) {
+        val ic = currentInputConnection ?: return
+        // 変換中なら確定してから動かす（編集中の読みを壊さない）
+        if (state != ComposingState.IDLE) commitCurrent()
+        val code = if (left) KeyEvent.KEYCODE_DPAD_LEFT else KeyEvent.KEYCODE_DPAD_RIGHT
+        ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, code))
+        ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, code))
+    }
+
+    override fun onEnter() {
+        val ic = currentInputConnection ?: return
+        when (state) {
+            ComposingState.CONVERTING -> commitCurrent()
+            ComposingState.COMPOSING -> {
+                // 変換前なら確定扱い（読みをそのまま出す）
+                commitCurrent()
+            }
+            ComposingState.IDLE -> Unit
+        }
+        ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER))
+        ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER))
+    }
+
     override fun onModeToggle() {
         if (state != ComposingState.IDLE) commitCurrent()
         mode = mode.toggled()
