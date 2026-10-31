@@ -63,6 +63,8 @@ object KeyboardLayouts {
         right = "？",
         left = "！",
         down = "・",
+        // 左の補助列に置くので、他の補助キーと同じ幅にする（列がずれないように）
+        widthWeight = AUX,
     )
 
     private val periodKey = FlickKey(
@@ -134,7 +136,15 @@ object KeyboardLayouts {
     private val alphabetRows: List<KeyboardRow> = listOf(
         KeyboardRow(
             listOf(
-                FlickKey(label = ",", center = ",", up = ";", right = ":", left = "?", down = "!"),
+                FlickKey(
+                    label = ",",
+                    center = ",",
+                    up = ";",
+                    right = ":",
+                    left = "?",
+                    down = "!",
+                    widthWeight = AUX,
+                ),
                 alphaKey("ABC", "a", "b", "c"),
                 alphaKey("DEF", "d", "e", "f"),
                 alphaKey("GHI", "g", "h", "i"),
@@ -152,7 +162,13 @@ object KeyboardLayouts {
         ),
         KeyboardRow(
             listOf(
-                FlickKey(label = ".", center = ".", up = "-", down = "/"),
+                FlickKey(
+                    label = ".",
+                    center = ".",
+                    up = "-",
+                    down = "/",
+                    widthWeight = AUX,
+                ),
                 alphaKey("STU", "s", "t", "u"),
                 alphaKey("VWX", "v", "w", "x"),
                 alphaKey("YZ", "y", "z", null),
