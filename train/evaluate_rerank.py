@@ -113,6 +113,18 @@ def beam_search(
     return [p for _, p in last[:want]]
 
 
+def edit_distance(a: str, b: str) -> int:
+    if a == b:
+        return 0
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i]
+        for j, cb in enumerate(b, 1):
+            cur.append(min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb)))
+        prev = cur
+    return prev[-1]
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--checkpoint", default="models/small_v3.pt")
@@ -122,6 +134,8 @@ def main() -> None:
     ap.add_argument("--betas", default="0.5,1.0,2.0")
     ap.add_argument("--onnx", default="")
     ap.add_argument("--score-mode", default="logprob", choices=["logprob", "logit"])
+    ap.add_argument("--mode", default="free", choices=["free", "fixed"],
+                    help="free: 分割ごと再ランク / fixed: 分割は unigram で固定し表記だけ BERT")
     ap.add_argument("--vocab", default="android/app/src/main/assets/model/vocab.txt")
     ap.add_argument("--beam", type=int, default=16)
     ap.add_argument("--want", type=int, default=24)
@@ -145,6 +159,8 @@ def main() -> None:
 
     base_hit = 0
     hits = {b: 0 for b in betas}
+    fixed_hits = {b: 0 for b in betas}
+    per_sent = []  # (入力長, unigram正解, {beta: 正解}, unigram CER, {beta: CER})
     # BERT 無しでどこまで候補が入っているか（オラクル）
     oracle = 0
     n_sent = 0
@@ -159,7 +175,7 @@ def main() -> None:
             if j - i > MAX_SPAN_LEN:
                 continue
             for c in cands[:MAX_CANDIDATES]:
-                arcs_by_start.setdefault(i, []).append(Arc(i, j, c, c.cost))
+                arcs_by_start.setdefault(i, []).append(Arc(i, j, c))
         for i in range(n):
             ch = read[i]
             arcs_by_start.setdefault(i, []).append(
@@ -175,8 +191,10 @@ def main() -> None:
         def surf(p: Sequence[Arc]) -> str:
             return "".join(a.cand.surface for a in p)
 
-        if surf(paths[0]) == gold:
+        base_ok = surf(paths[0]) == gold
+        if base_ok:
             base_hit += 1
+        cb = edit_distance(surf(paths[0]), gold) / max(len(gold), 1)
         if any(surf(p) == gold for p in paths):
             oracle += 1
 
@@ -200,6 +218,8 @@ def main() -> None:
                 x: float(lp[k]) for k, x in enumerate(span_surfaces[(s, e)])
             }
 
+        row = {}
+        cerr = {}
         for b in betas:
             scored = []
             for p in paths:
@@ -209,14 +229,49 @@ def main() -> None:
                     c += -b * logp[(a.start, a.end)].get(a.cand.surface, -6.0)
                 scored.append((c, p))
             scored.sort(key=lambda x: x[0])
-            if surf(scored[0][1]) == gold:
+            row[b] = surf(scored[0][1]) == gold
+            if row[b]:
                 hits[b] += 1
+            cerr[b] = edit_distance(surf(scored[0][1]), gold) / max(len(gold), 1)
+        # 分割を unigram 最尤で固定し、表記だけ BERT に選ばせる
+        seg = [(a.start, a.end) for a in paths[0]]
+        span_map = {(i, j): c for i, j, c in spans}
+        if all(k in span_map for k in seg):
+            req2 = [(st, en, span_map[(st, en)][:MAX_CANDIDATES]) for st, en in seg]
+            lps2 = scorer.span_logprobs(ctx, read, req2)
+            for b in betas:
+                parts = []
+                for (st, en, cands), lp in zip(req2, lps2):
+                    best_i, best_c = 0, None
+                    for ci, c in enumerate(cands):
+                        cc = c.cost - b * float(lp[ci])
+                        if best_c is None or cc < best_c:
+                            best_c, best_i = cc, ci
+                    parts.append(cands[best_i].surface)
+                if "".join(parts) == gold:
+                    fixed_hits[b] += 1
+        per_sent.append((n, base_ok, row, cb, cerr))
 
     print(f"sentences={n_sent}")
     print(f"unigram beam best        : {base_hit / n_sent:.4f}")
     print(f"oracle (正解が仮説内)     : {oracle / n_sent:.4f}")
     for b in betas:
-        print(f"bert rerank beta={b:<4}  : {hits[b] / n_sent:.4f}")
+        print(f"bert rerank beta={b:<4}  : {hits[b] / n_sent:.4f}   (分割固定なら {fixed_hits[b] / n_sent:.4f})")
+
+    print("\n入力長ごとの文正解率")
+    print(f"{'文字数':>10} {'件数':>6} " + " ".join(f"{'uni':>7}" for _ in range(1)) + " " + " ".join(f"b={b:<5}" for b in betas) + "  改善")
+    edges = [(0, 5), (6, 9), (10, 13), (14, 18), (19, 24), (25, 99)]
+    for lo, hi in edges:
+        sel = [r for r in per_sent if lo <= r[0] <= hi]
+        if not sel:
+            continue
+        bu = sum(1 for r in sel if r[1]) / len(sel)
+        cells = []
+        for b in betas:
+            cells.append(sum(1 for r in sel if r[2][b]) / len(sel))
+        cerr_u = sum(r[3] for r in sel) / len(sel)
+        cerr_b = sum(r[4][betas[0]] for r in sel) / len(sel)
+        print(f"{lo:>4}-{hi:<4} {len(sel):>6} {bu:>7.3f} " + " ".join(f"{c:>7.3f}" for c in cells) + f"  {cells[0]-bu:+.3f}   CER {cerr_u:.3f} -> {cerr_b:.3f}")
 
 
 if __name__ == "__main__":

@@ -28,6 +28,12 @@ class LatticeConverter(
     @Volatile
     private var scorerFailed = false
 
+    @Volatile
+    private var bigram: BigramLM? = null
+
+    @Volatile
+    private var bigramTried = false
+
     private fun dictionary(): Dictionary {
         dict?.let { return it }
         synchronized(this) {
@@ -61,6 +67,17 @@ class LatticeConverter(
                 scorerFailed = true
                 null
             }
+        }
+    }
+
+    /** 連接コスト。無くても動く（unigram のみに戻る）。 */
+    private fun bigramOrNull(): BigramLM? {
+        if (bigramTried) return bigram
+        synchronized(this) {
+            if (bigramTried) return bigram
+            bigram = BigramLM.getOrNull(appContext)
+            bigramTried = true
+            return bigram
         }
     }
 
@@ -192,14 +209,18 @@ class LatticeConverter(
             logp[key] = m
         }
 
+        val lm = bigramOrNull()
         val scored = ArrayList<Pair<Int, List<Arc>>>(paths.size)
         for (path in paths) {
             var c = 0
+            var prev: String? = null
             for (a in path) {
-                c += a.cost
+                // 連接コストが観測済みなら unigram の代わりに使う（分割の誤りを減らす）
+                c += lm?.cost(prev, a.surface) ?: a.cost
                 val key = a.start.toLong() * 1000L + a.end
                 val lp = logp[key]?.get(a.surface) ?: WORST_LOGPROB
                 c += (-BETA * lp * 100f).toInt()
+                prev = a.surface
             }
             scored.add(Pair(c, path))
         }
@@ -214,7 +235,7 @@ class LatticeConverter(
         private const val MAX_CANDIDATES = BertScorer.MAX_CANDIDATES
 
         /** BERT スコアの重み。辞書コストは 1/100 nat 単位なので -β·logP·100 を足す。 */
-        private const val BETA = 6.0f
+        private const val BETA = 1.2f
 
         /** 仮説に候補が無かったときの代替 logP。 */
         private const val WORST_LOGPROB = -6.0f

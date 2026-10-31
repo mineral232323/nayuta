@@ -14,6 +14,7 @@ from typing import Dict, List, Sequence
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from train.conv import Arc, Candidate, Lexicon  # noqa: E402
+from train.evaluate_bigram import BigramLM  # noqa: E402
 from train.evaluate_rerank import OnnxModelScorer, beam_search  # noqa: E402
 from train.train import load_lexicon  # noqa: E402
 
@@ -27,7 +28,7 @@ def build_arcs(lex: Lexicon, read: str) -> Dict[int, List[Arc]]:
         if j - i > MAX_SPAN_LEN:
             continue
         for c in cands[:MAX_CANDIDATES]:
-            arcs.setdefault(i, []).append(Arc(i, j, c, c.cost))
+            arcs.setdefault(i, []).append(Arc(i, j, c))
     for i in range(len(read)):
         ch = read[i]
         arcs.setdefault(i, []).append(Arc(i, i + 1, Candidate(ch, 1, lex.unk_cost), lex.unk_cost))
@@ -44,6 +45,7 @@ def convert(
     want: int,
     top: int = 5,
     verbose: bool = False,
+    lm: BigramLM | None = None,
 ):
     arcs = build_arcs(lex, read)
     paths = beam_search(len(read), arcs, beam, want)
@@ -67,11 +69,15 @@ def convert(
     for p in paths:
         c = 0.0
         detail = []
+        prev = None
         for a in p:
-            c += a.cost
+            conn = lm.conn(prev, a.cand.surface, 0.0) if lm is not None else None
+            base = a.cost if conn is None else conn
+            c += base
             lp = logp[(a.start, a.end)].get(a.cand.surface, -6.0)
             c += -beta * lp
-            detail.append((a.cand.surface, round(a.cost, 1), round(lp, 3)))
+            detail.append((a.cand.surface, round(base, 1), round(lp, 3)))
+            prev = a.cand.surface
         scored.append((c, "".join(a.cand.surface for a in p), detail))
     scored.sort(key=lambda x: x[0])
     seen = set()
@@ -103,6 +109,7 @@ def main() -> None:
     ap.add_argument("--beam", type=int, default=32)
     ap.add_argument("--want", type=int, default=48)
     ap.add_argument("--top", type=int, default=5)
+    ap.add_argument("--bigram", default="")
     ap.add_argument("--no-bert", action="store_true")
     ap.add_argument("--score-mode", default="logprob", choices=["logprob", "logit"])
     ap.add_argument("-v", "--verbose", action="store_true")
@@ -112,9 +119,12 @@ def main() -> None:
     scorer = None if args.no_bert else OnnxModelScorer(args.onnx, args.vocab, mode=args.score_mode)
     print(f"input : {args.text}")
     print(f"ctx   : {args.context!r}")
+    lm = None
+    if args.bigram:
+        lm = BigramLM(args.bigram, 'data/bigram_words.tsv')
     out = convert(
         lex, scorer, args.text, args.context, args.beta,
-        args.beam, args.want, args.top, args.verbose,
+        args.beam, args.want, args.top, args.verbose, lm,
     )
     for c, s, _ in out:
         print(f"{c:9.2f}  {s}")
