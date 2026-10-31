@@ -1,0 +1,63 @@
+Nayuta
+Copyright 2026 Nayuta contributors
+
+このプロダクトは、以下の第三者ソフトウェアおよびデータを利用しています。
+
+--------------------------------------------------------------------
+1. tohoku-nlp/bert-base-japanese-char-v3
+--------------------------------------------------------------------
+  ライセンス: Apache License 2.0
+  用途: 文字レベル BERT エンコーダの初期重み（ファインチューニング元）
+  https://huggingface.co/tohoku-nlp/bert-base-japanese-char-v3
+
+  本リポジトリの学習済みモデル（モデル重み）は、上記モデルを
+  Apache License 2.0 の条件に従って利用しています。
+
+--------------------------------------------------------------------
+2. JMdict（EDRDG）
+--------------------------------------------------------------------
+  ライセンス: Creative Commons Attribution-ShareAlike 4.0 International
+              (CC BY-SA 4.0)
+  用途: カタカナ外来語 → 英単語 対応表の生成
+  https://www.edrdg.org/jmdict/j_jmdict.html
+  https://www.edrdg.org/edrdg/licence.html
+
+  本リポジトリのビルド手順で生成される
+  `android/app/src/main/assets/dict/english.tsv(.gz)` は
+  JMdict から作られた派生データであり、CC BY-SA 4.0 で配布されます。
+
+--------------------------------------------------------------------
+3. SudachiDict
+--------------------------------------------------------------------
+  ライセンス: Apache License 2.0
+  用途: 辞書（活用形・読みの揺れ）の生成
+  https://github.com/WorksApplications/SudachiDict
+
+--------------------------------------------------------------------
+4. 日本語 Wikipedia（ダンプデータ）
+--------------------------------------------------------------------
+  ライセンス: Creative Commons Attribution-ShareAlike 4.0 International
+              (CC BY-SA 4.0) / GNU Free Documentation License
+  用途: 単語頻度辞書・学習コーパス・bigram 統計の作成
+  https://ja.wikipedia.org/
+  https://dumps.wikimedia.org/jawiki/
+
+  コーパス本文はリポジトリに含めていません（学習・統計の生成元としてのみ使用）。
+
+--------------------------------------------------------------------
+5. ONNX Runtime
+--------------------------------------------------------------------
+  ライセンス: MIT License
+  用途: 端末内でのモデル推論
+  https://github.com/microsoft/onnxruntime
+
+--------------------------------------------------------------------
+6. AndroidX / Material Components for Android
+--------------------------------------------------------------------
+  ライセンス: Apache License 2.0
+  用途: 設定画面の UI
+  https://github.com/material-components/material-components-android
+
+--------------------------------------------------------------------
+
+Apache License 2.0 の全文は LICENSE を参照してください。

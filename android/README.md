@@ -1,9 +1,11 @@
 # Nayuta Android IME
 
-BERT 採点による日本語 IME の Android 側（土台 / M2）。現時点の変換エンジンは
-「読みをそのまま返す」スタブで、UI・状態遷移・ビルド基盤が動くところまで。
+BERT 採点つきの日本語 IME 本体（Kotlin）。プロジェクト全体は
+[トップの README](../README.md) を参照。
 
-設計は [../docs/design.md](../docs/design.md) を参照。
+- `InputMethodService` ベース。キーボードは**自前 View で描画**（フリック判定・候補バー・配色も自前）
+- 変換は端末内で完結（ラティス + Viterbi + BERT 再ランク + bigram）
+- 設定画面だけ Material 3（`MaterialCardView` / `ExposedDropdownMenu` など）を使っている
 
 ## ビルド
 
@@ -12,7 +14,7 @@ BERT 採点による日本語 IME の Android 側（土台 / M2）。現時点�
 bash ../scripts/android/setup_sdk.sh
 
 # ビルド（JDK21 / SDK / Gradle キャッシュの設定はラッパが面倒を見る）
-bash ../scripts/android/build.sh assembleDebug
+bash ../scripts/android/build.sh
 ```
 
 `scripts/android/build.sh` がやっていることを手で書くと:
@@ -21,52 +23,53 @@ bash ../scripts/android/build.sh assembleDebug
 export JAVA_HOME=/usr/lib/jvm/java-21-openjdk
 export ANDROID_HOME=$PWD/../.android-sdk
 export ANDROID_SDK_ROOT=$ANDROID_HOME
-export GRADLE_USER_HOME=$PWD/../.cache/gradle   # $HOME 側は読み取り専用のため
+export GRADLE_USER_HOME=$PWD/../.cache/gradle
 cd android
 ./gradlew assembleDebug
 ```
 
-APK は `android/app/build/outputs/apk/debug/app-debug.apk` に出力される。
+学習済みモデルと辞書（`app/src/main/assets/`、約 30MB）は**リポジトリに含まれない**。
+`train/` の手順で生成する（[トップの README](../README.md#2-学習済みアセットを生成)）。
 
 ## 構成
 
 ```
 app/src/main/java/com/nayuta/ime/
-├── NayutaImeService.kt          IME 本体（状態遷移・変換呼び出し・確定）
+├── NayutaImeService.kt          IME 本体（状態遷移・ライブ変換・確定・学習呼び出し）
+├── NayutaSettings.kt            設定（SharedPreferences）
+├── SettingsActivity.kt          設定画面（Material 3）
+├── TestInputActivity.kt         動作確認用の入力画面
 ├── converter/
-│   ├── Converter.kt             変換エンジンとの唯一のインターフェース
-│   ├── KanaConverter.kt         スタブ（読みをそのまま返す）
-│   └── Converters.kt            ★差し替え点（ここ 1 箇所だけ書き換える）
+│   ├── Converter.kt             変換エンジンのインターフェース
+│   ├── Converters.kt            生成点（ここで実装を選ぶ）
+│   ├── KanaConverter.kt         フォールバック（辞書なしで読みを返す）
+│   ├── bert/
+│   │   ├── BertScorer.kt        ONNX 推論（採点 / phi）
+│   │   ├── OnlineLearner.kt     薄い層のオンライン学習
+│   │   └── CharVocab.kt         文字語彙
+│   └── dict/
+│       ├── LatticeConverter.kt  本命の変換（ラティス + Viterbi + 再ランク）
+│       ├── Dictionary.kt        辞書（読み → 候補）
+│       ├── BigramLM.kt          単語 bigram
+│       ├── EnglishLexicon.kt    カタカナ語 → 英単語
+│       └── UserDictionary.kt    ユーザー辞書
 └── keyboard/
-    ├── KeyboardLayout.kt        KeySpec / FlickKey / FunctionKey / KeyboardRow
-    ├── KeyboardLayouts.kt       12 キー配列のテーブル（かな / 英数）
-    ├── FlickKeyboardView.kt     描画・フリック判定・ポップアップ
+    ├── KeyboardLayout.kt        KeySpec / FlickKey / FunctionKey / SpacerKey
+    ├── KeyboardLayouts.kt       かな / 英字(QWERTY) / 数字テンキー / 記号 の配列
+    ├── FlickKeyboardView.kt     描画・フリック判定・長押し・ポップアップ
     ├── CandidateView.kt         横スクロールの候補バー
-    └── KeyboardColors.kt        配色
+    └── KeyboardColors.kt        配色（ライト / ダーク）
 ```
 
-## 変換エンジンの差し替え
+## キーボード配列
 
-`com.nayuta.ime.converter.Converters.create()` の戻り値を変えるだけ。
-
-```kotlin
-private fun create(context: Context): Converter {
-    return KanaConverter()   // ← ここを LatticeBertConverter(...) に
-}
-```
-
-`Converter.convert(reading, context)` は「ひらがなの読み + 直前の文脈文字列」を
-受け取り、優先順の候補リストを返す。呼び出しはサービス側の単一スレッド executor
-から行われるので、実装はブロッキングしてよい（ONNX 推論をそのまま書ける）。
-
-## キーボード配列（かなモード）
+### かな（12 キー + 補助列）
 
 ```
-あ(あいうえお)  か(かきくけこ)  さ(さしすせそ)
-た(たちつてと)  な(なにぬねの)  は(はひふへほ)
-ま(まみむめも)  や(や ゆ よ)    ら(らりるれろ)
-わ(わをんー)    小(っゃゅょぁ)  ゛(゛゜、。・)
-[英数] [空白] [変換] [削除]
+1@  あ  か  さ  ⌫
+◀   た  な  は  ▶
+数字 ま  や  ら  変換
+あa 小゛ わ 、。  ✓
 ```
 
 フリックは母音の並びに合わせて **左=い / 上=う / 右=え / 下=お**:
@@ -77,15 +80,35 @@ private fun create(context: Context): Converter {
        お
 ```
 
-つまり 中央=あ / 左=い / 上=う / 右=え / 下=お。
-や行は「や・ゆ・よ」しかないため未使用方向は無入力（ゆ=上、よ=下）。
-わ行は を=下（お段）、ん=上、ー=右。
-英数モードは電話機の 12 キー英字配列（ABC/DEF/GHI …、タップ=1 文字目 / 上=2 / 右=3 / 左=4）。
+や行・わ行は未使用方向が無入力。`小゛` の長押しで半濁点。
 
-### デザイン（Gboard / Material 3）
+### 英字（QWERTY）
 
-見た目は Gboard と Google の Material 3（Material You）に合わせている。
-色は [keyboard/KeyboardColors.kt](app/src/main/java/com/nayuta/ime/keyboard/KeyboardColors.kt)
+```
+1 2 3 4 5 6 7 8 9 0     ← 設定で表示/非表示
+q w e r t y u i o p
+ a s d f g h j k l
+⇧ z x c v b n m  ⌫
+あa  ,   空白   .  123  ✓
+```
+
+1 行の高さは 0.82 倍にして、かなより少し低くしてある。
+
+### 数字・記号（`1@` / `123` から）
+
+```
+1 2 3 4 5 6 7 8 9 0
+@ # ¥ % & - + ( ) /
+ABC * " ' : ; ! ?  ⌫
+あa  ,   空白   .   ⏎
+```
+
+かなの `数字` キーは従来の 12 キーテンキー（`1`〜`9` `0` `.` `,` など）。
+
+## デザイン
+
+見た目は Gboard と Material 3 に合わせている。色は
+[keyboard/KeyboardColors.kt](app/src/main/java/com/nayuta/ime/keyboard/KeyboardColors.kt)
 に Material のカラーロール名でまとまっている。
 
 | ロール | 値 | 用途 |
@@ -93,27 +116,35 @@ private fun create(context: Context): Converter {
 | surfaceContainer | `#F1F3F4` | キーボードの地 |
 | surface | `#F8F9FA` | 候補ストリップの地 |
 | surfaceContainerLowest | `#FFFFFF` | キー（角丸 10dp） |
-| surfaceContainerHigh | `#E6E8EB` | 機能キー（英数 / 空白 / 変換 / 削除） |
+| surfaceContainerHigh | `#E6E8EB` | 機能キー |
 | primary (state layer 12%) | `#E8F0FE` | 押下中のキー |
 | primary | `#0B57D0` | 押下中のフリック方向のサブラベル |
-| primaryContainer / onPrimaryContainer | `#D3E3FD` / `#041E49` | 選択中の候補ピル |
-| outlineVariant | `#E3E6EA` | ストリップ境界の hairline |
 
-- タイポグラフィ: かなは sans-serif 20sp、機能キーは sans-serif-medium 13.5sp、
-  サブラベル 11sp（押下中は primary 色・13sp・medium）、候補 16sp。
-- 寸法: 4dp グリッド。行の基準高 50dp、機能行 48dp、キー間 4dp、外周 4dp。
-  キーの角丸 10dp（M3 medium shape）、候補ピルは高さ 40dp の完全な角丸。
-- 押下中はキーが primary の状態レイヤーで薄く青くなり、上に白い角丸ポップアップ
-  （影 3 層 + outline）が出る。機能キーは Gboard 同様ポップアップを出さない。
-- 候補ストリップは 48dp（M3 の最小タップ領域）。非選択候補はタップでリップル。
+- タイポグラフィ: かな 20sp、機能キー 13.5sp、サブラベル 11sp、候補 16sp
+- 寸法: 4dp グリッド。行の基準高は設定（44 / 50 / 58dp）
+- 押下中はキーが primary の状態レイヤーで薄く青くなり、上に角丸ポップアップが出る
+- ダークモードは端末設定またはアプリ設定（システム / ライト / ダーク）に従う
 
 ## 実機で使う
 
-実機接続後:
-
 ```bash
 adb install -r app/build/outputs/apk/debug/app-debug.apk
-# 設定 → システム → 言語と入力 → 画面キーボード → Nayuta を有効化
 adb shell ime enable com.nayuta.ime/.NayutaImeService
-adb shell ime set com.nayuta.ime/.NayutaImeService
+adb shell ime set    com.nayuta.ime/.NayutaImeService
 ```
+
+挙動確認は `adb shell am start -n com.nayuta.ime/.TestInputActivity` の
+テスト入力画面で行う（個人情報を含むアプリを開かなくて済む）。
+
+## デバッグ
+
+```bash
+adb logcat -s NayutaConv NayutaDict NayutaBert NayutaOnline
+```
+
+| タグ | 内容 |
+|---|---|
+| `NayutaConv` | 変換結果と所要時間 |
+| `NayutaDict` | 辞書・bigram の読み込み |
+| `NayutaBert` | モデルの読み込み |
+| `NayutaOnline` | オンライン学習の更新ログ |

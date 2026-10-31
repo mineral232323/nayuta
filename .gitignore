@@ -14,7 +14,6 @@ local.properties
 logs/
 android/app/src/main/assets/dict/
 android/app/src/main/assets/model/
-models/
 
 # 個人情報が写り込む可能性があるため、スクリーンショットは追跡しない
 docs/images/
