@@ -18,6 +18,7 @@ object NayutaSettings {
     const val KEY_VIBRATE = "vibrate"
     const val KEY_THEME = "theme"
     const val KEY_FLICK_HINT = "flick_hint"
+    const val KEY_NUMBER_ROW = "number_row"
 
     // ---- 既定値 ----
     const val DEFAULT_LIVE_DELAY = 500
@@ -26,6 +27,7 @@ object NayutaSettings {
     const val DEFAULT_VIBRATE = true
     const val DEFAULT_THEME = 0             // 0=システム / 1=ライト / 2=ダーク
     const val DEFAULT_FLICK_HINT = 2        // 0=標準 / 1=小さめ / 2=非表示
+    const val DEFAULT_NUMBER_ROW = true     // 英字の上に数字行を出す
 
     /** ライブ変換の待ち時間の選択肢（0 はオフ）。 */
     val LIVE_DELAY_OPTIONS = intArrayOf(0, 300, 500, 800, 1000)
@@ -79,6 +81,11 @@ object NayutaSettings {
     var vibrate: Boolean
         get() = p()?.getBoolean(KEY_VIBRATE, DEFAULT_VIBRATE) ?: DEFAULT_VIBRATE
         set(value) = p()?.edit()?.putBoolean(KEY_VIBRATE, value)?.apply() ?: Unit
+
+    /** 英字キーボードの上に数字行（1234567890）を出すか。 */
+    var numberRowEnabled: Boolean
+        get() = p()?.getBoolean(KEY_NUMBER_ROW, DEFAULT_NUMBER_ROW) ?: DEFAULT_NUMBER_ROW
+        set(value) = p()?.edit()?.putBoolean(KEY_NUMBER_ROW, value)?.apply() ?: Unit
 
     /** フリックのヒント表示: 0=標準 / 1=小さめ / 2=非表示。 */
     var flickHintMode: Int

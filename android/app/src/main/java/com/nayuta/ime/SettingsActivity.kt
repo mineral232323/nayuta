@@ -95,6 +95,12 @@ class SettingsActivity : AppCompatActivity() {
                 )
                 addView(divider())
                 addView(
+                    switchRow("英字の上に数字行を出す", NayutaSettings.numberRowEnabled) { on ->
+                        NayutaSettings.numberRowEnabled = on
+                    },
+                )
+                addView(divider())
+                addView(
                     switchRow("振動フィードバック", NayutaSettings.vibrate) { on ->
                         NayutaSettings.vibrate = on
                     },

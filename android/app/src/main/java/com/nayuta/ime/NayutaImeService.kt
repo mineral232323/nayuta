@@ -662,7 +662,7 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
     /** 現在のモードに応じたレイアウト。英数は Shift 状態を反映する。 */
     private fun layoutFor(mode: KeyboardMode): com.nayuta.ime.keyboard.KeyboardLayout =
         if (mode == KeyboardMode.ALPHABET) {
-            KeyboardLayouts.alphabet(shiftOn)
+            KeyboardLayouts.alphabet(shiftOn, NayutaSettings.numberRowEnabled)
         } else {
             KeyboardLayouts.forMode(mode)
         }

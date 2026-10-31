@@ -221,7 +221,7 @@ object KeyboardLayouts {
      * QWERTY 配列。各行の合計幅を 10 に揃えて、キー幅が行をまたいで揃うようにしている。
      * 2 段目の左右は [SpacerKey] でずらす。
      */
-    fun alphabet(shift: Boolean): KeyboardLayout {
+    fun alphabet(shift: Boolean, numberRow: Boolean = true): KeyboardLayout {
         fun letter(c: Char): FlickKey {
             val s = if (shift) c.uppercaseChar() else c
             return FlickKey(label = s.toString(), center = s.toString())
@@ -250,13 +250,18 @@ object KeyboardLayouts {
             FunctionKey(label = "✓", action = KeyAction.ENTER, widthWeight = 2.0f),
         )
 
+        val rows = mutableListOf<KeyboardRow>()
+        if (numberRow) {
+            // 数字行（キー幅は他の英字キーと同じ）
+            rows.add(KeyboardRow("1234567890".map { symbolKey(it.toString()) }))
+        }
+        rows.add(KeyboardRow(row0))
+        rows.add(KeyboardRow(row1))
+        rows.add(KeyboardRow(row2))
+        rows.add(KeyboardRow(row3))
+
         return KeyboardLayout(
-            listOf(
-                KeyboardRow(row0),
-                KeyboardRow(row1),
-                KeyboardRow(row2),
-                KeyboardRow(row3),
-            ),
+            rows,
             // 英字はかなより 1 行あたりの高さを低くして、画面を広く使えるようにする
             heightScale = ALPHA_HEIGHT_SCALE,
         )
