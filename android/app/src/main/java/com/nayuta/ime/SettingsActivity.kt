@@ -138,23 +138,36 @@ class SettingsActivity : Activity() {
         setPadding(0, (resources.displayMetrics.density * 12).toInt(), 0, 0)
     }
 
+    /**
+     * ラジオボタンのグループ。
+     *
+     * 注意:
+     * - RadioGroup は子の View ID で「どれが選択中か」を管理するため、
+     *   子には一意な ID を振る必要がある（無いと複数同時に選択できてしまう）。
+     * - 子に setOnCheckedChangeListener を付けると RadioGroup 内部の
+     *   リスナに上書きされて排他制御が壊れる。リスナは **グループ側**に付ける。
+     */
     private fun radioGroup(
         items: List<String>,
         selected: Int,
         onChange: (Int) -> Unit,
-    ): RadioGroup = RadioGroup(this).apply {
-        orientation = RadioGroup.VERTICAL
+    ): RadioGroup {
+        val ids = items.indices.map { android.view.View.generateViewId() }
+        val group = RadioGroup(this).apply { orientation = RadioGroup.VERTICAL }
         items.forEachIndexed { i, text ->
-            addView(
-                RadioButton(this@SettingsActivity).apply {
+            group.addView(
+                RadioButton(this).apply {
+                    id = ids[i]
                     this.text = text
                     isChecked = i == selected
-                    setOnCheckedChangeListener { _, checked ->
-                        if (checked) onChange(i)
-                    }
                 },
             )
         }
+        group.setOnCheckedChangeListener { _, checkedId ->
+            val index = ids.indexOf(checkedId)
+            if (index >= 0) onChange(index)
+        }
+        return group
     }
 
     private fun switchRow(text: String, checked: Boolean, onChange: (Boolean) -> Unit): LinearLayout =
