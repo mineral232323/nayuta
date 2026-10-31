@@ -223,9 +223,14 @@ class FlickKeyboardView @JvmOverloads constructor(
         labelPaint.color = KeyboardColors.keyText
         canvas.drawText(key.label, centerX, baselineFor(labelPaint, centerY), labelPaint)
 
+        val hintMode = com.nayuta.ime.NayutaSettings.flickHintMode
+        if (hintMode == HINT_HIDDEN) return
+        val baseSize = if (hintMode == HINT_SMALL) 9f else 11f
+        val activeSize = if (hintMode == HINT_SMALL) 10.5f else 13f
+
         key.subLabels.forEach { (direction, text) ->
             val active = isPressedKey && direction == pressedDirection
-            subLabelPaint.textSize = sp(if (active) 13f else 11f)
+            subLabelPaint.textSize = sp(if (active) activeSize else baseSize)
             subLabelPaint.color = if (active) {
                 KeyboardColors.keySubTextActive
             } else {
@@ -527,6 +532,10 @@ class FlickKeyboardView @JvmOverloads constructor(
 
         /** 長押しで連続削除するときの間隔。 */
         const val REPEAT_INTERVAL_MS = 60L
+
+        /** フリックヒントの設定値。 */
+        const val HINT_SMALL = 1
+        const val HINT_HIDDEN = 2
     }
 
     private fun dp(value: Float): Float = TypedValue.applyDimension(

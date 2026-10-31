@@ -17,6 +17,7 @@ object NayutaSettings {
     const val KEY_KEY_HEIGHT = "key_height"
     const val KEY_VIBRATE = "vibrate"
     const val KEY_THEME = "theme"
+    const val KEY_FLICK_HINT = "flick_hint"
 
     // ---- 既定値 ----
     const val DEFAULT_LIVE_DELAY = 500
@@ -24,6 +25,7 @@ object NayutaSettings {
     const val DEFAULT_KEY_HEIGHT = 1        // 0=小 / 1=中 / 2=大
     const val DEFAULT_VIBRATE = true
     const val DEFAULT_THEME = 0             // 0=システム / 1=ライト / 2=ダーク
+    const val DEFAULT_FLICK_HINT = 0        // 0=標準 / 1=小さめ / 2=非表示
 
     /** ライブ変換の待ち時間の選択肢（0 はオフ）。 */
     val LIVE_DELAY_OPTIONS = intArrayOf(0, 300, 500, 800, 1000)
@@ -77,6 +79,12 @@ object NayutaSettings {
     var vibrate: Boolean
         get() = p()?.getBoolean(KEY_VIBRATE, DEFAULT_VIBRATE) ?: DEFAULT_VIBRATE
         set(value) = p()?.edit()?.putBoolean(KEY_VIBRATE, value)?.apply() ?: Unit
+
+    /** フリックのヒント表示: 0=標準 / 1=小さめ / 2=非表示。 */
+    var flickHintMode: Int
+        get() = (p()?.getInt(KEY_FLICK_HINT, DEFAULT_FLICK_HINT) ?: DEFAULT_FLICK_HINT)
+            .coerceIn(0, 2)
+        set(value) = p()?.edit()?.putInt(KEY_FLICK_HINT, value.coerceIn(0, 2))?.apply() ?: Unit
 
     /** 0=システム / 1=ライト / 2=ダーク。 */
     var themeMode: Int

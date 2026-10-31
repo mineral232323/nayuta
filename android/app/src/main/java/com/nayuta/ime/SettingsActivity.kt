@@ -70,6 +70,13 @@ class SettingsActivity : Activity() {
             },
         )
 
+        root.addView(label("フリックのヒント（キー上の小さい文字）"))
+        root.addView(
+            radioGroup(listOf("標準", "小さめ", "非表示"), NayutaSettings.flickHintMode) { i ->
+                NayutaSettings.flickHintMode = i
+            },
+        )
+
         root.addView(
             switchRow("振動フィードバック", NayutaSettings.vibrate) { on ->
                 NayutaSettings.vibrate = on
