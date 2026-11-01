@@ -16,6 +16,8 @@ android {
 
         // ONNX Runtime のネイティブライブラリを全 ABI 分入れると APK が膨らむため arm64 に絞る
         ndk {
+            // 実機は arm64-v8a のみ。配布 APK を小さく保つため。
+            // エミュレータ（x86_64）で試すときは一時的に "x86_64" を足す。
             abiFilters += listOf("arm64-v8a")
         }
     }
