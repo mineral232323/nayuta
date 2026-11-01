@@ -137,6 +137,21 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
             setBackgroundColor(KeyboardColors.keyboardBackground)
         }
 
+        // 端末によっては IME のウィンドウがナビゲーションバー（ジェスチャーバー）
+        // の下まで伸びてしまい、最下段のキーが隠れる。システムバーの
+        // インセットぶんだけ内側に寄せる（インセットが 0 の端末では何も起きない）。
+        root.setOnApplyWindowInsetsListener { v, insets ->
+            val bottom = if (android.os.Build.VERSION.SDK_INT >= 30) {
+                insets.getInsets(android.view.WindowInsets.Type.systemBars()).bottom
+            } else {
+                @Suppress("DEPRECATION")
+                insets.systemWindowInsetBottom
+            }
+            android.util.Log.d("NayutaInset", "systemBarBottom=$bottom h=${v.height}")
+            if (bottom > 0) v.setPadding(0, 0, 0, bottom)
+            insets
+        }
+
         val candidates = CandidateView(this).apply {
             onCandidateSelected = { index, _ -> selectCandidate(index) }
         }
