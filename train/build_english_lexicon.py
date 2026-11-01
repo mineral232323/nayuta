@@ -19,6 +19,9 @@ import sys
 KATA = re.compile(r"^[ァ-ヶー・]+$")
 GLOSS_OK = re.compile(r"^[A-Za-z][A-Za-z .'\-]*$")
 
+# 外来語らしくないもの（擬音語・擬態語など）を除くためのタグ
+EXCLUDE_MISC = {"on-mim"}
+
 # 固有名詞・商標っぽいタグが付いていたら先頭を大文字にする
 PROPER_FIELDS = {"tradem", "company", "product", "serv", "work"}
 PROPER_MISC = {"company", "product", "serv"}
@@ -51,9 +54,18 @@ def main() -> None:
         if not (args.min_len <= len(k) <= 30):
             continue
 
+        senses = w.get("sense", [])
+        # 名詞でないもの（擬音語・副詞など）は外来語ではないので除外する
+        if not senses:
+            continue
+        first_misc = set(senses[0].get("misc", []) or [])
+        first_pos = senses[0].get("partOfSpeech", []) or []
+        if first_misc & EXCLUDE_MISC or "n" not in first_pos:
+            continue
+
         gloss = None
         proper = False
-        for sense in w.get("sense", []):
+        for sense in senses:
             fields = set(sense.get("field", []) or [])
             misc = set(sense.get("misc", []) or [])
             if fields & PROPER_FIELDS or misc & PROPER_MISC:
