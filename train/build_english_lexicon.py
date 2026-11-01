@@ -36,6 +36,8 @@ def main() -> None:
     ap.add_argument("--jmdict", default="data/raw/jmdict_eng.json")
     ap.add_argument("--out", default="data/english_lexicon.tsv")
     ap.add_argument("--min-len", type=int, default=3)
+    ap.add_argument("--abbr-ratio", type=float, default=1.8,
+                    help="略語のとき、読みの長さに対する英語の長さの許容比")
     ap.add_argument("--max-len", type=int, default=24)
     args = ap.parse_args()
 
@@ -63,6 +65,16 @@ def main() -> None:
         if first_misc & EXCLUDE_MISC or "n" not in first_pos:
             continue
 
+        # 略語（コラボ = collaboration など）は、読みに近い長さの英語を選ぶ。
+        # 全綴りしか無い場合は英語化しない（コラボ → collaboration を防ぐ）。
+        is_abbr = "abbr" in first_misc or "abbr" in (senses[0].get("misc") or [])
+        all_glosses = [
+            gl["text"]
+            for sense in senses
+            for gl in sense.get("gloss", [])
+            if gl.get("lang") == "eng" and GLOSS_OK.match(gl.get("text", ""))
+        ]
+
         gloss = None
         proper = False
         for sense in senses:
@@ -79,6 +91,19 @@ def main() -> None:
                     break
         if not gloss:
             continue
+
+        if is_abbr:
+            reading_len = max(1, len(k))
+            best_gloss = None
+            for g in all_glosses:
+                r = len(g) / reading_len
+                if 0.4 <= r <= args.abbr_ratio:
+                    score = abs(r - 1.0)
+                    if best_gloss is None or score < best_gloss[0]:
+                        best_gloss = (score, g)
+            if best_gloss is None:
+                continue
+            gloss = best_gloss[1]
 
         if proper:
             gloss = gloss[0].upper() + gloss[1:]
