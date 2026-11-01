@@ -628,6 +628,17 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
             KeyboardLayouts.forMode(mode)
         }
 
+    /**
+     * ダブルタップ（例: 、 → 。）。
+     * 1 回目のタップは即座に確定させているので、直前が [removeLast] なら
+     * それを取り消して [insert] を入れ直す。
+     */
+    override fun onDoubleTapText(removeLast: String, insert: String) {
+        if (removeLast.isEmpty() || !reading.endsWith(removeLast)) return
+        reading.setLength(reading.length - removeLast.length)
+        onText(insert)
+    }
+
     override fun onShift() {
         shiftOn = !shiftOn
         if (mode == KeyboardMode.ALPHABET) keyboardView?.setLayout(layoutFor(mode))

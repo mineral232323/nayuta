@@ -50,6 +50,8 @@ class FlickKeyboardView @JvmOverloads constructor(
         fun onHandakutenPrevious()
         fun onNumberToggle()
         fun onKanaToggle()
+        /** FlickKey のダブルタップ。直前の [removeLast] を [insert] に置き換える。 */
+        fun onDoubleTapText(removeLast: String, insert: String)
         fun onShift()
         fun onSymbolToggle()
         fun onAlphabetToggle()
@@ -483,7 +485,9 @@ class FlickKeyboardView @JvmOverloads constructor(
             if (isDouble) {
                 when (key) {
                     is FunctionKey -> dispatch(key.doubleTapAction!!)
-                    is FlickKey -> key.doubleTapText?.let { listener?.onText(it) }
+                    is FlickKey -> key.doubleTapText?.let {
+                        listener?.onDoubleTapText(key.center, it)
+                    }
                     else -> Unit
                 }
                 return
