@@ -66,17 +66,23 @@ object KeyboardLayouts {
     )
 
     /**
-     * 「、」と「。」を統合した句読点キー。
-     * 中央グリッド（わ の右）に置くので幅は通常キーと同じ 1.0。
+     * 句読点キー（Gboard と同じ配置）。
+     *
+     *         ？
+     *    。  、  ！
+     *         …
+     *
+     * 中央をダブルタップすると「。」。
      */
     private val commaKey = FlickKey(
         label = "、。",
         center = "、",
-        up = "。",
-        right = "？",
-        left = "！",
-        down = "・",
+        up = "？",
+        right = "！",
+        left = "。",
+        down = "…",
         widthWeight = 1f,
+        doubleTapText = "。",
     )
 
     private val longVowelKey = FlickKey(

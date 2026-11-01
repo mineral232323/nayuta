@@ -469,8 +469,10 @@ class FlickKeyboardView @JvmOverloads constructor(
 
     private fun emit(rowIndex: Int, columnIndex: Int, direction: FlickDirection) {
         val key = layout.rows.getOrNull(rowIndex)?.keys?.getOrNull(columnIndex) ?: return
-        // ダブルタップで別動作になるキー（小゛ → 半濁点など）
-        if (key is FunctionKey && key.doubleTapAction != null && direction == FlickDirection.CENTER) {
+        // ダブルタップで別動作になるキー（小゛ → 半濁点、、。 → 。など）
+        val hasDoubleTap = (key is FunctionKey && key.doubleTapAction != null) ||
+            (key is FlickKey && key.doubleTapText != null)
+        if (hasDoubleTap && direction == FlickDirection.CENTER) {
             val now = SystemClock.uptimeMillis()
             val isDouble = rowIndex == lastTapRow &&
                 columnIndex == lastTapCol &&
@@ -479,7 +481,11 @@ class FlickKeyboardView @JvmOverloads constructor(
             lastTapCol = columnIndex
             lastTapTime = if (isDouble) 0L else now
             if (isDouble) {
-                dispatch(key.doubleTapAction!!)
+                when (key) {
+                    is FunctionKey -> dispatch(key.doubleTapAction!!)
+                    is FlickKey -> key.doubleTapText?.let { listener?.onText(it) }
+                    else -> Unit
+                }
                 return
             }
         }

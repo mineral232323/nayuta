@@ -32,6 +32,8 @@ data class FlickKey(
     val left: String? = null,
     val down: String? = null,
     override val widthWeight: Float = 1f,
+    /** 中央をダブルタップしたときの出力（例: 、 のキーで 。）。 */
+    val doubleTapText: String? = null,
 ) : KeySpec() {
 
     /** 指定方向の出力。未定義方向は null（= 何も入力しない）。 */
