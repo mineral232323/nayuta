@@ -130,6 +130,7 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
     }
 
     override fun onCreateInputView(): View {
+        android.util.Log.d("NayutaInset", "onCreateInputView called")
         // 端末のダークモード設定を反映してから組む
         KeyboardColors.resolve(this)
         val root = LinearLayout(this).apply {
@@ -140,17 +141,36 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
         // 端末によっては IME のウィンドウがナビゲーションバー（ジェスチャーバー）
         // の下まで伸びてしまい、最下段のキーが隠れる。システムバーの
         // インセットぶんだけ内側に寄せる（インセットが 0 の端末では何も起きない）。
-        root.setOnApplyWindowInsetsListener { v, insets ->
-            val bottom = if (android.os.Build.VERSION.SDK_INT >= 30) {
-                insets.getInsets(android.view.WindowInsets.Type.systemBars()).bottom
-            } else {
-                @Suppress("DEPRECATION")
-                insets.systemWindowInsetBottom
+        // 端末によっては IME のウィンドウがナビゲーションバー（ジェスチャーバー）
+        // の裏まで伸びて最下段のキーが隠れる。一方、窓がバーの上で止まっている
+        // 端末（AQUOS など）では同じインセット値が返るため、そのまま足すと
+        // 余白が二重になる。実際の画面座標で「重なっている分だけ」を補正する。
+        root.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+            override fun onViewAttachedToWindow(v: View) {
+                v.post {
+                    val ins = v.rootWindowInsets ?: return@post
+                    val navBottom = if (android.os.Build.VERSION.SDK_INT >= 30) {
+                        ins.getInsets(android.view.WindowInsets.Type.systemBars()).bottom
+                    } else {
+                        @Suppress("DEPRECATION")
+                        ins.systemWindowInsetBottom
+                    }
+                    val loc = IntArray(2)
+                    v.getLocationOnScreen(loc)
+                    val viewBottom = loc[1] + v.height
+                    val screenH = resources.displayMetrics.heightPixels
+                    val navTop = screenH - navBottom
+                    val overlap = viewBottom - navTop
+                    android.util.Log.d(
+                        "NayutaInset",
+                        "navBottom=$navBottom viewBottom=$viewBottom navTop=$navTop overlap=$overlap",
+                    )
+                    if (overlap > 0) v.setPadding(0, 0, 0, overlap)
+                }
             }
-            android.util.Log.d("NayutaInset", "systemBarBottom=$bottom h=${v.height}")
-            if (bottom > 0) v.setPadding(0, 0, 0, bottom)
-            insets
-        }
+
+            override fun onViewDetachedFromWindow(v: View) {}
+        })
 
         val candidates = CandidateView(this).apply {
             onCandidateSelected = { index, _ -> selectCandidate(index) }
