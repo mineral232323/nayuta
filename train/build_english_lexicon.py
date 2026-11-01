@@ -52,6 +52,10 @@ def main() -> None:
         # 主たる読みがカタカナのものだけ（ひらがな語のカタカナ表記ゆれを除外）
         if not KATA.match(kana[0]["text"]):
             continue
+        # 漢字表記があるものは日本語由来（魚名・植物名など）なので除外する。
+        # 外来語はふつう漢字表記を持たない。
+        if w.get("kanji"):
+            continue
         k = kana[0]["text"]
         if not (args.min_len <= len(k) <= 30):
             continue
