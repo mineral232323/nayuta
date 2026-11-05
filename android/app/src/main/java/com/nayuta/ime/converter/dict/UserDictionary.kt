@@ -56,6 +56,16 @@ class UserDictionary private constructor(
 
     val size: Int get() = cache.values.sumOf { it.size }
 
+    /** エクスポート用に全 (reading, surface) ペアを読み順で返す。 */
+    fun allEntries(): List<Pair<String, String>> {
+        val out = ArrayList<Pair<String, String>>(size)
+        for ((reading, surfaces) in cache) {
+            for (s in surfaces) out.add(reading to s)
+        }
+        out.sortBy { it.first }
+        return out
+    }
+
     /** 全件削除。 */
     fun clear() {
         cache.clear()
