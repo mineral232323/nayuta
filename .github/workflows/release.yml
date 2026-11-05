@@ -39,6 +39,7 @@ jobs:
         uses: ./.github/actions/setup-env
         with:
           self-tag: ${{ inputs.tag || github.ref_name }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create pre-release with APK
         shell: bash

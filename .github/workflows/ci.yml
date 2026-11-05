@@ -23,6 +23,7 @@ jobs:
         uses: ./.github/actions/setup-env
         with:
           tasks: "assembleDebug lintDebug"
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4

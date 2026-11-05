@@ -10,6 +10,9 @@ inputs:
     description: "アセット取得で自分自身のタグを除外するためのタグ名"
     required: false
     default: ""
+  github-token:
+    description: "gh CLI（リリース一覧の取得）用トークン。composite 内では secrets を直接参照できないため呼び出し元から渡す"
+    required: true
 
 runs:
   using: "composite"
@@ -38,7 +41,7 @@ runs:
     - name: Fetch model/dict assets from the latest release
       shell: bash
       env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GH_TOKEN: ${{ inputs.github-token }}
         SELF_TAG: ${{ inputs.self-tag }}
       run: |
         PREV_TAG="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 10 \
