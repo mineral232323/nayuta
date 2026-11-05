@@ -10,17 +10,21 @@ BERT 採点つきの日本語 IME 本体（Kotlin）。プロジェクト全体�
 ## ビルド
 
 ```bash
-# 初回のみ: SDK を .android-sdk/ に入れる（ライセンス同意込み）
+# 初回のみ: JDK 21 と SDK をリポジトリ内に入れる（sudo 不要）
+bash ../scripts/android/setup_jdk.sh
 bash ../scripts/android/setup_sdk.sh
 
-# ビルド（JDK21 / SDK / Gradle キャッシュの設定はラッパが面倒を見る）
+# ビルド（JDK / SDK / Gradle キャッシュの設定はラッパが面倒を見る）
 bash ../scripts/android/build.sh
+
+# エミュレーター（x86_64）で試す場合は ABI を切り替える
+bash ../scripts/android/build.sh assembleDebug -PnayutaAbi=x86_64
 ```
 
 `scripts/android/build.sh` がやっていることを手で書くと:
 
 ```bash
-export JAVA_HOME=/usr/lib/jvm/java-21-openjdk
+export JAVA_HOME=$PWD/../.cache/jdk21   # システムの JDK 21 でも可
 export ANDROID_HOME=$PWD/../.android-sdk
 export ANDROID_SDK_ROOT=$ANDROID_HOME
 export GRADLE_USER_HOME=$PWD/../.cache/gradle
@@ -29,7 +33,8 @@ cd android
 ```
 
 学習済みモデルと辞書（`app/src/main/assets/`、約 30MB）は**リポジトリに含まれない**。
-`train/` の手順で生成する（[トップの README](../README.md#2-学習済みアセットを生成)）。
+開発用なら `bash ../scripts/android/fetch_assets.sh` で配布 APK から取り出せる。
+学習から作る場合は `train/` の手順で生成する（[トップの README](../README.md#2-学習済みアセットを生成)）。
 
 ## 構成
 

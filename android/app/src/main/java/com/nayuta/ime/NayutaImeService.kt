@@ -1,6 +1,7 @@
 package com.nayuta.ime
 
 import android.inputmethodservice.InputMethodService
+import android.os.Build
 import android.os.Handler
 import android.text.SpannableStringBuilder
 import android.text.Spanned
@@ -9,6 +10,8 @@ import android.text.style.UnderlineSpan
 import android.os.Looper
 import android.view.KeyEvent
 import android.view.View
+import android.view.WindowInsets
+import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
 import android.widget.LinearLayout
@@ -102,12 +105,27 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
     // ライフサイクル
     // ------------------------------------------------------------------
 
-    /** 設定が変わったらキーボードを作り直す（高さ・振動・外観を反映）。 */
+    /**
+     * 設定が変わったときの反映。
+     *
+     * 高さ・外観・数字行はレイアウト自体が変わるのでビューを作り直す。
+     * 一方、フリックのヒントは描画時の文字サイズだけなので再描画で足りる。
+     * ここで毎回作り直すと、インセット補正が付く前の一瞬ができたり、
+     * 端末によっては下の余白が消えたりする（issue #2）。
+     */
     private val prefListener =
-        android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
+        android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
             uiHandler.post {
-                KeyboardColors.resolve(this)
-                setInputView(onCreateInputView())
+                when (key) {
+                    NayutaSettings.KEY_FLICK_HINT -> keyboardView?.invalidate()
+                    NayutaSettings.KEY_VIBRATE,
+                    NayutaSettings.KEY_LIVE_DELAY,
+                    NayutaSettings.KEY_ENGLISH -> Unit
+                    else -> {
+                        KeyboardColors.resolve(this)
+                        setInputView(onCreateInputView())
+                    }
+                }
             }
         }
 
@@ -139,38 +157,21 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
         }
 
         // 端末によっては IME のウィンドウがナビゲーションバー（ジェスチャーバー）
-        // の下まで伸びてしまい、最下段のキーが隠れる。システムバーの
-        // インセットぶんだけ内側に寄せる（インセットが 0 の端末では何も起きない）。
-        // 端末によっては IME のウィンドウがナビゲーションバー（ジェスチャーバー）
         // の裏まで伸びて最下段のキーが隠れる。一方、窓がバーの上で止まっている
-        // 端末（AQUOS など）では同じインセット値が返るため、そのまま足すと
-        // 余白が二重になる。実際の画面座標で「重なっている分だけ」を補正する。
-        root.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
-            override fun onViewAttachedToWindow(v: View) {
-                v.post {
-                    val ins = v.rootWindowInsets ?: return@post
-                    val navBottom = if (android.os.Build.VERSION.SDK_INT >= 30) {
-                        ins.getInsets(android.view.WindowInsets.Type.systemBars()).bottom
-                    } else {
-                        @Suppress("DEPRECATION")
-                        ins.systemWindowInsetBottom
-                    }
-                    val loc = IntArray(2)
-                    v.getLocationOnScreen(loc)
-                    val viewBottom = loc[1] + v.height
-                    val screenH = resources.displayMetrics.heightPixels
-                    val navTop = screenH - navBottom
-                    val overlap = viewBottom - navTop
-                    android.util.Log.d(
-                        "NayutaInset",
-                        "navBottom=$navBottom viewBottom=$viewBottom navTop=$navTop overlap=$overlap",
-                    )
-                    if (overlap > 0) v.setPadding(0, 0, 0, overlap)
-                }
-            }
-
-            override fun onViewDetachedFromWindow(v: View) {}
-        })
+        // 端末（AQUOS など）では同じインセット値を足すと余白が二重になる。
+        // 実際の画面座標で「重なっている分だけ」を補正する。
+        //
+        // アタッチ時の 1 回だけ計算すると、レイアウト前で height が 0 だったり、
+        // IME 表示アニメーション中でインセットが 0 だったりした値のまま固定され、
+        // 余白が出たり消えたりする（issue #1 / #2）。インセット変化とレイアウト
+        // 変化の両方で再計算する。
+        root.setOnApplyWindowInsetsListener { v, insets ->
+            v.post { applyBottomInset(v) }
+            insets
+        }
+        root.addOnLayoutChangeListener { v, _, _, _, _, _, _, _, _ ->
+            v.post { applyBottomInset(v) }
+        }
 
         val candidates = CandidateView(this).apply {
             onCandidateSelected = { index, _ -> selectCandidate(index) }
@@ -198,6 +199,54 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
         return root
     }
 
+    /**
+     * ナビゲーションバーと重なっている分だけ下パディングを入れる。
+     *
+     * IME のウィンドウは端末によって「画面下端まで伸びる」場合と
+     * 「ナビゲーションバーの上で止まる」場合がある。実際の画面座標で
+     * 重なりを測ることで、どちらでも余白が二重にならない。
+     *
+     * パディングが変わるときだけ `setPadding` する（レイアウトの再入を防ぐ）。
+     */
+    private fun applyBottomInset(v: View) {
+        if (v.height <= 0) return
+        val insets = v.rootWindowInsets ?: return
+        val navBottom = if (Build.VERSION.SDK_INT >= 30) {
+            insets.getInsets(WindowInsets.Type.systemBars()).bottom
+        } else {
+            @Suppress("DEPRECATION")
+            insets.systemWindowInsetBottom
+        }
+        val screenH = screenHeightPx()
+        if (screenH <= 0) return
+        val loc = IntArray(2)
+        v.getLocationOnScreen(loc)
+        val viewBottom = loc[1] + v.height
+        val navTop = screenH - navBottom
+        // 重なりはナビゲーションバーの高さを超えない（座標が過渡状態でも暴れない）
+        val wanted = (viewBottom - navTop).coerceIn(0, navBottom)
+        if (v.paddingBottom != wanted) {
+            v.setPadding(0, 0, 0, wanted)
+            android.util.Log.d(
+                "NayutaInset",
+                "screenH=$screenH navBottom=$navBottom viewBottom=$viewBottom navTop=$navTop pad=$wanted",
+            )
+        }
+    }
+
+    /** 画面の物理的な高さ（システムバーを含む）。 */
+    private fun screenHeightPx(): Int {
+        val wm = getSystemService(WindowManager::class.java) ?: return 0
+        return if (Build.VERSION.SDK_INT >= 30) {
+            wm.maximumWindowMetrics.bounds.height()
+        } else {
+            val dm = android.util.DisplayMetrics()
+            @Suppress("DEPRECATION")
+            wm.defaultDisplay.getRealMetrics(dm)
+            dm.heightPixels
+        }
+    }
+
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         super.onConfigurationChanged(newConfig)
         val wasDark = KeyboardColors.isDark
@@ -212,6 +261,8 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
         super.onStartInputView(info, restarting)
         resetComposing(finishComposing = true)
         keyboardView?.setLayout(layoutFor(mode))
+        // 表示のたびにインセットを取り直す（ウィンドウの高さが変わることがある）
+        keyboardView?.rootView?.requestApplyInsets()
     }
 
     override fun onFinishInput() {

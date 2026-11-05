@@ -12,14 +12,15 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SDK_DIR="$REPO_ROOT/.android-sdk"
-JAVA_HOME="${JAVA_HOME:-/usr/lib/jvm/java-21-openjdk}"
+# shellcheck source=scripts/android/env.sh
+source "$REPO_ROOT/scripts/android/env.sh"
 CMDLINE_TOOLS_ZIP_URL="https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip"
 CMDLINE_TOOLS_DIR="$SDK_DIR/cmdline-tools/latest"
 SDKMANAGER="$CMDLINE_TOOLS_DIR/bin/sdkmanager"
 
 # AGP / sdkmanager は JDK 17+ が必要。この環境では JDK 21 を使う。
-if [[ ! -x "$JAVA_HOME/bin/java" ]]; then
-    echo "error: JDK が見つかりません: $JAVA_HOME" >&2
+if ! JAVA_HOME="$(resolve_java_home)"; then
+    echo "error: JDK 21 が見つかりません。先に scripts/android/setup_jdk.sh を実行してください。" >&2
     exit 1
 fi
 export JAVA_HOME

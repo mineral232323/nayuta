@@ -3,7 +3,7 @@
 # Nayuta — Android ビルドラッパ
 #
 # このマシン固有の前提をここに閉じ込める:
-#   - JDK は /usr/lib/jvm/java-21-openjdk
+#   - JDK は $JAVA_HOME → /usr/lib/jvm/java-21-openjdk → .cache/jdk21 の順
 #   - Android SDK はリポジトリ内の .android-sdk
 #   - Gradle のキャッシュは $HOME ではなく .cache/gradle（$HOME 側は読み取り専用）
 #
@@ -18,9 +18,10 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ANDROID_DIR="$REPO_ROOT/android"
 SDK_DIR="$REPO_ROOT/.android-sdk"
 
-JAVA_HOME="${JAVA_HOME:-/usr/lib/jvm/java-21-openjdk}"
-if [[ ! -x "$JAVA_HOME/bin/java" ]]; then
-    echo "error: JDK が見つかりません: $JAVA_HOME" >&2
+# shellcheck source=scripts/android/env.sh
+source "$REPO_ROOT/scripts/android/env.sh"
+if ! JAVA_HOME="$(resolve_java_home)"; then
+    echo "error: JDK 21 が見つかりません。先に scripts/android/setup_jdk.sh を実行してください。" >&2
     exit 1
 fi
 
@@ -40,17 +41,25 @@ mkdir -p "$GRADLE_USER_HOME"
 # 辞書アセット（APK に同梱する読み→表記辞書）は生成物なので git 管理外。
 # 無ければ学習側のスクリプトで書き出す。
 # ---------------------------------------------------------------------------
-DICT_ASSET="$ANDROID_DIR/app/src/main/assets/dict/lexicon.tsv.gz"
-if [[ ! -f "$DICT_ASSET" ]]; then
+ASSET_DIR="$ANDROID_DIR/app/src/main/assets"
+DICT_ASSET_GZ="$ASSET_DIR/dict/lexicon.tsv.gz"
+DICT_ASSET_TSV="$ASSET_DIR/dict/lexicon.tsv"
+if [[ ! -f "$DICT_ASSET_GZ" && ! -f "$DICT_ASSET_TSV" ]]; then
     if [[ -x "$REPO_ROOT/.venv/bin/python" && -f "$REPO_ROOT/data/lexicon.tsv" ]]; then
         echo "==> 辞書アセットが無いので生成します"
         ( cd "$REPO_ROOT" && ./.venv/bin/python -m train.export_dict )
     else
-        echo "error: $DICT_ASSET がありません。" >&2
-        echo "  .venv と data/lexicon.tsv を用意して次を実行してください:" >&2
+        echo "error: $ASSET_DIR/dict/lexicon.tsv(.gz) がありません。" >&2
+        echo "  配布 APK から取り出す場合:" >&2
+        echo "    bash scripts/android/fetch_assets.sh" >&2
+        echo "  学習から作る場合:" >&2
         echo "    python -m train.export_dict" >&2
         exit 1
     fi
+fi
+
+if [[ ! -f "$ASSET_DIR/model/scorer.onnx" ]]; then
+    echo "warn: model/scorer.onnx がありません。BERT 再ランクなし（unigram のみ）でビルドします。" >&2
 fi
 
 if [[ $# -eq 0 ]]; then

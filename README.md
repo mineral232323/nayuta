@@ -84,10 +84,24 @@ scripts/    SDK セットアップとビルド
 
 ### 1. 必要なもの
 
-- JDK 21、Android SDK（`scripts/android/setup_sdk.sh` が `./.android-sdk` に入れる）
+- JDK 21、Android SDK（`scripts/android/setup_jdk.sh` と `setup_sdk.sh` が
+  `./.cache/jdk21` / `./.android-sdk` に入れる。sudo 不要）
 - Python 3.12 + uv（`uv sync`）
 
+手順の詳細は [docs/setup.md](docs/setup.md) を参照。最短手順:
+
+```bash
+uv sync
+bash scripts/android/setup_jdk.sh
+bash scripts/android/setup_sdk.sh
+bash scripts/android/fetch_assets.sh   # 配布 APK からモデルと辞書を展開
+bash scripts/android/build.sh
+```
+
 ### 2. 学習済みアセットを生成
+
+学習から作り直す場合の手順（GPU 推奨）。配布 APK から取り出すだけなら
+`scripts/android/fetch_assets.sh` で済む。
 
 ```bash
 # 1) コーパスから辞書と学習データを作る（日本語 Wikipedia の dump を data/raw に置く）
@@ -150,6 +164,7 @@ BERT 本体は凍結し、**最後の薄い線形層だけ**を確定のたび�
 
 ## 設計と実験の記録
 
+- [docs/setup.md](docs/setup.md) — 開発環境のセットアップ（uv / JDK / SDK / アセット）
 - [docs/design.md](docs/design.md) — 全体設計（文字＝モデル / 単語＝探索 / 文節＝UI）
 - [docs/m0-results.md](docs/m0-results.md) — BERT 採点の効果と文脈の寄与
 - [docs/m2-step-a.md](docs/m2-step-a.md) / [docs/m2-step-b.md](docs/m2-step-b.md) — 端末実装と bigram の効果

@@ -11,14 +11,18 @@ android {
         applicationId = "com.nayuta.ime"
         minSdk = 26
         targetSdk = 35
-        versionCode = 4
-        versionName = "0.2.3"
+        versionCode = 5
+        versionName = "0.2.4"
 
         // ONNX Runtime のネイティブライブラリを全 ABI 分入れると APK が膨らむため arm64 に絞る
         ndk {
             // 実機は arm64-v8a のみ。配布 APK を小さく保つため。
-            // エミュレータ（x86_64）で試すときは一時的に "x86_64" を足す。
-            abiFilters += listOf("arm64-v8a")
+            // エミュレータ（x86_64）で試すときは -PnayutaAbi=x86_64 を付ける。
+            val requested = (project.findProperty("nayutaAbi") as String?)
+                ?.split(",")
+                ?.map { it.trim() }
+                ?.filter { it.isNotEmpty() }
+            abiFilters += requested ?: listOf("arm64-v8a")
         }
     }
 

@@ -1,0 +1,36 @@
+[project]
+name = "nayuta-train"
+version = "0.1.0"
+description = "Nayuta の学習・評価・エクスポート用ツール（モデル本体は android/）"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+license = { text = "Apache-2.0" }
+
+# train/ の import から起こした依存。実行はリポジトリ root で
+#   uv run python -m train.<script>
+# の形にする（train はパッケージとしてインストールしない）。
+dependencies = [
+    "torch>=2.6",
+    "transformers>=4.48",
+    "huggingface-hub>=0.27",
+    "pyarrow>=17.0",
+    "sudachipy>=0.6.9",
+    "sudachidict-core>=20240409",
+    "numpy>=1.26",
+    "onnx>=1.16",
+    "onnxruntime>=1.20",
+]
+
+[tool.uv]
+package = false
+
+# 既定では CPU 版 torch を入れる（このマシンに NVIDIA GPU が無いため）。
+# CUDA 版が要る場合は uv sync の前に index を差し替える:
+#   uv sync --index https://download.pytorch.org/whl/cu128
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu" }]
