@@ -1,0 +1,64 @@
+name: Release
+
+# v0.2.6-pre のようなタグを push するか、Actions 画面から手動実行すると、
+# debug APK をビルドして pre-release に nayuta-<version>-debug.apk を添付する。
+# assets（モデル・辞書）は「自分を除く最新リリース」から取得する。
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "ビルドする ref（ブランチ / タグ / SHA）"
+        required: false
+        default: master
+        type: string
+      tag:
+        description: "作成するリリースタグ（空なら versionName から自動採番: vX.Y.Z-pre）"
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+
+      - name: Build environment + assembleDebug
+        uses: ./.github/actions/setup-env
+        with:
+          self-tag: ${{ inputs.tag || github.ref_name }}
+
+      - name: Create pre-release with APK
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ inputs.tag || github.ref_name }}
+        run: |
+          if [[ -z "$TAG_NAME" || "$TAG_NAME" == "master" ]]; then
+            VER="$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' android/app/build.gradle.kts)"
+            TAG_NAME="v${VER}-pre"
+          fi
+          # fetch_assets.sh の命名規則に合わせる（v0.2.6-pre → nayuta-0.2.6-debug.apk）
+          APK_OUT="nayuta-${TAG_NAME#v}"
+          APK_OUT="${APK_OUT%-pre}-debug.apk"
+          cp android/app/build/outputs/apk/debug/app-debug.apk "$APK_OUT"
+          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            gh release upload "$TAG_NAME" "$APK_OUT" --clobber
+          else
+            gh release create "$TAG_NAME" "$APK_OUT" --prerelease \
+              --title "Nayuta ${TAG_NAME#v}" \
+              --notes "自動ビルド（${GITHUB_SHA:0:7}）。arm64-v8a のみ同梱。"
+          fi
+          echo "Released: $TAG_NAME / $APK_OUT"

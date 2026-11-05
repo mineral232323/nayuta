@@ -76,6 +76,7 @@ docs/       設計書と実験レポート
 train/      BERT スパン採点器の学習・評価・書き出し（Python）
 android/    IME 本体（Kotlin）
 scripts/    SDK セットアップとビルド
+.github/    CI（PR/master でビルド検証）とリリース（v* タグで pre-release 作成）
 ```
 
 学習済みモデルと辞書（合計 30MB 程度）は**リポジトリに含めていない**。
@@ -134,6 +135,14 @@ adb shell ime set    com.nayuta.ime/.NayutaImeService
 ```
 
 APK は約 54MB（ONNX Runtime のネイティブライブラリが大半）。
+
+### 4. リリース（CI/CD が自動で実行）
+
+`v0.2.6-pre` のようなタグを push するか、GitHub の Actions 画面から「Release」を手動実行すると、
+`.github/workflows/release.yml` がビルドして pre-release に `nayuta-<version>-debug.apk` を添付する。
+モデル・辞書のアセットは「自分を除く最新リリース」から自動取得する（`scripts/android/fetch_assets.sh`）。
+PR と master への push では `.github/workflows/ci.yml` が `assembleDebug` + `lintDebug` を実行し、
+APK をビルド成果物（artifact）として保存する。
 
 ## 使い方
 
