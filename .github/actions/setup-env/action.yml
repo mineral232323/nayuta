@@ -44,9 +44,10 @@ runs:
         GH_TOKEN: ${{ inputs.github-token }}
         SELF_TAG: ${{ inputs.self-tag }}
       run: |
+        # gh の --jq は --arg を解釈できないため、自己タグの除外は grep で行う
         PREV_TAG="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 10 \
-          --json tagName --jq --arg self "$SELF_TAG" \
-          '[.[] | select(.tagName != $self) | .tagName][0]')"
+          --json tagName --jq '.[].tagName' \
+          | grep -v -x -F "$SELF_TAG" | head -1)"
         if [[ -z "$PREV_TAG" ]]; then
           echo "error: 取得元のリリースがありません" >&2
           exit 1
