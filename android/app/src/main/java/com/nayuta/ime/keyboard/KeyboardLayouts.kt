@@ -5,14 +5,14 @@ package com.nayuta.ime.keyboard
  *
  * かなモード:
  * ```
- *  小゛    あ  か  さ   ⌫
+ *  1@      あ  か  さ   ⌫
  *  ◀       た  な  は   ▶
- *  、      ま  や  ら   変換(空白)
- *  あa   ー  わ  。   ✓
+ *  数字    ま  や  ら   変換(空白)
+ *  あa     小゛ わ  、。  ✓
  * ```
  * - 左右の細い列が補助キー。`た` の左に左矢印、`は` の右に右矢印を置いている。
- * - `小゛` は **直前の 1 文字を変換する**キー。文字の種類で濁点か小文字かを決める
- *   （か→が、あ→ぁ、つ→っ）。長押しで半濁点（は→ぱ）。
+ * - `小゛` は直前の 1 文字を変換するキー。Gboard と同じく
+ *   中央/下 = 小文字 → 濁点 → 半濁点 を巡回、上 = 小文字、左 = 濁点、右 = 半濁点。
  * - `変換(空白)` は 1 キー。未確定なら変換、確定済みなら半角スペース。
  *
  * 母音は **中央=あ / 左=い / 上=う / 右=え / 下=お**（市販のフリック入力と同じ）:
@@ -44,18 +44,31 @@ object KeyboardLayouts {
     private fun aux(label: String, action: KeyAction, weight: Float = AUX): FunctionKey =
         FunctionKey(label = label, action = action, widthWeight = weight)
 
-    /** 直前の文字を小文字化/濁点化するキー。長押しで半濁点。 */
     /**
-     * 直前の文字を小文字/濁点に変えるキー。中央グリッド（ま の下）に置くので
+     * 直前の文字を小文字/濁点/半濁点に変えるキー。中央グリッド（ま の下）に置くので
      * 幅は通常キーと同じ 1.0（補助列の AUX ではない）。
+     *
+     * Gboard と同じ割り当て:
+     *   中央 = 文字種に応じて 小文字 → 濁点 → 半濁点 を巡回
+     *   上   = 小文字
+     *   左   = 濁点
+     *   右   = 半濁点
+     *   下   = 中央と同じ
      */
     private val transformKey = FunctionKey(
         label = "小゛",
         action = KeyAction.TRANSFORM,
         widthWeight = 1f,
-        longPressAction = KeyAction.HANDAKUTEN,
-        // 同じキーを短時間に 2 回 → 半濁点（は → ば → ぱ）
-        doubleTapAction = KeyAction.HANDAKUTEN,
+        flickActions = mapOf(
+            FlickDirection.UP to KeyAction.SMALL,
+            FlickDirection.LEFT to KeyAction.DAKUTEN,
+            FlickDirection.RIGHT to KeyAction.HANDAKUTEN,
+        ),
+        flickLabels = mapOf(
+            FlickDirection.UP to "小",
+            FlickDirection.LEFT to "゛",
+            FlickDirection.RIGHT to "゜",
+        ),
     )
 
     /** 変換と空白を兼ねるキー（未確定なら変換、確定済みなら半角スペース）。 */
@@ -124,8 +137,15 @@ object KeyboardLayouts {
             listOf(
                 aux("数字", KeyAction.NUMBER_TOGGLE),
                 gojuon("ま", "み", "む", "め", "も"),
-                // や行は や・ゆ・よ のみ。ゆ=う段なので上、よ=お段なので下。
-                FlickKey(label = "や", center = "や", up = "ゆ", down = "よ"),
+                // や行は や・ゆ・よ のみ。左右は Gboard と同じく括弧。
+                FlickKey(
+                    label = "や",
+                    center = "や",
+                    up = "ゆ",
+                    down = "よ",
+                    left = "（",
+                    right = "）",
+                ),
                 gojuon("ら", "り", "る", "れ", "ろ"),
                 convertOrSpaceKey,
             ),

@@ -60,10 +60,14 @@ data class FunctionKey(
     override val label: String,
     val action: KeyAction,
     override val widthWeight: Float = 1f,
-    /** 長押ししたときの動作（例: 小゛キーの長押しで半濁点）。 */
+    /** 長押ししたときの動作（任意）。 */
     val longPressAction: KeyAction? = null,
-    /** 短時間に 2 回押したときの動作（例: 小゛キーのダブルタップで半濁点）。 */
+    /** 短時間に 2 回押したときの動作（任意）。 */
     val doubleTapAction: KeyAction? = null,
+    /** フリック方向ごとの動作。未定義の方向は [action]（中央と同じ）。 */
+    val flickActions: Map<FlickDirection, KeyAction> = emptyMap(),
+    /** フリック方向のサブラベル（描画用）。 */
+    val flickLabels: Map<FlickDirection, String> = emptyMap(),
 ) : KeySpec()
 
 enum class KeyAction {
@@ -78,7 +82,13 @@ enum class KeyAction {
     /** 直前の 1 文字を、文字種に応じて濁点化 or 小文字化する（トグル）。 */
     TRANSFORM,
 
-    /** 直前の 1 文字を半濁点化する（小゛キーのダブルタップ/長押し用）。 */
+    /** 直前の 1 文字を小文字化する（小゛キーの上フリック）。 */
+    SMALL,
+
+    /** 直前の 1 文字を濁点化する（小゛キーの左フリック）。 */
+    DAKUTEN,
+
+    /** 直前の 1 文字を半濁点化する（小゛キーの右フリック）。 */
     HANDAKUTEN,
 
     /** かな ⇄ 数字テンキー。 */

@@ -89,12 +89,12 @@ bash scripts/android/setup_sdk.sh
 bash scripts/android/fetch_assets.sh
 ```
 
-`v0.2.4-pre` の debug APK を `.cache/release/` に落とし、中の
+`v0.2.5-pre` の debug APK を `.cache/release/` に落とし、中の
 `assets/dict/*` と `assets/model/*` を `android/app/src/main/assets/` に展開する。
 別のバージョンを使う場合:
 
 ```bash
-NAYUTA_RELEASE_TAG=v0.2.3-pre bash scripts/android/fetch_assets.sh
+NAYUTA_RELEASE_TAG=v0.2.4-pre bash scripts/android/fetch_assets.sh
 ```
 
 ### B. 学習から作り直す（GPU 推奨）

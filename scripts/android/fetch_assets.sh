@@ -8,13 +8,13 @@
 #
 # 使い方:
 #   bash scripts/android/fetch_assets.sh
-#   NAYUTA_RELEASE_TAG=v0.2.3-pre bash scripts/android/fetch_assets.sh
+#   NAYUTA_RELEASE_TAG=v0.2.4-pre bash scripts/android/fetch_assets.sh
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ASSET_DIR="$REPO_ROOT/android/app/src/main/assets"
-TAG="${NAYUTA_RELEASE_TAG:-v0.2.4-pre}"
+TAG="${NAYUTA_RELEASE_TAG:-v0.2.5-pre}"
 CACHE_DIR="$REPO_ROOT/.cache/release"
 
 # origin から owner/repo を取る（fork でも動くように）
@@ -26,7 +26,7 @@ if [[ -z "$SLUG" ]]; then
 fi
 
 APK_NAME="nayuta-${TAG#v}-debug.apk"
-# タグ名と APK 名が一致しないリリース（v0.2.4-pre → nayuta-v0.2.4-debug.apk）を吸収
+# タグ名と APK 名が一致しないリリース（v0.2.5-pre → nayuta-v0.2.5-debug.apk）を吸収
 if [[ "$TAG" == *-pre ]]; then
     APK_NAME="nayuta-${TAG%-pre}-debug.apk"
 fi

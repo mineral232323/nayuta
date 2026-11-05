@@ -47,6 +47,8 @@ class FlickKeyboardView @JvmOverloads constructor(
         fun onCursorMove(left: Boolean)
         fun onEnter()
         fun onTransformPrevious()
+        fun onSmallPrevious()
+        fun onDakutenPrevious()
         fun onHandakutenPrevious()
         fun onNumberToggle()
         fun onKanaToggle()
@@ -201,7 +203,7 @@ class FlickKeyboardView @JvmOverloads constructor(
                 drawKeyBackground(canvas, rect, key, isPressedKey)
                 when (key) {
                     is FlickKey -> drawFlickKey(canvas, rect, key, isPressedKey)
-                    is FunctionKey -> drawFunctionKey(canvas, rect, key)
+                    is FunctionKey -> drawFunctionKey(canvas, rect, key, isPressedKey)
                     is SpacerKey -> Unit
                 }
             }
@@ -227,12 +229,22 @@ class FlickKeyboardView @JvmOverloads constructor(
         labelPaint.color = KeyboardColors.keyText
         canvas.drawText(key.label, centerX, baselineFor(labelPaint, centerY), labelPaint)
 
+        drawSubLabels(canvas, rect, isPressedKey, key.subLabels)
+    }
+
+    private fun drawSubLabels(
+        canvas: Canvas,
+        rect: RectF,
+        isPressedKey: Boolean,
+        labels: List<Pair<FlickDirection, String>>,
+    ) {
+        if (labels.isEmpty()) return
         val hintMode = com.nayuta.ime.NayutaSettings.flickHintMode
         if (hintMode == HINT_HIDDEN) return
         val baseSize = if (hintMode == HINT_SMALL) 9f else 11f
         val activeSize = if (hintMode == HINT_SMALL) 10.5f else 13f
 
-        key.subLabels.forEach { (direction, text) ->
+        labels.forEach { (direction, text) ->
             val active = isPressedKey && direction == pressedDirection
             subLabelPaint.textSize = sp(if (active) activeSize else baseSize)
             subLabelPaint.color = if (active) {
@@ -246,7 +258,12 @@ class FlickKeyboardView @JvmOverloads constructor(
         }
     }
 
-    private fun drawFunctionKey(canvas: Canvas, rect: RectF, key: FunctionKey) {
+    private fun drawFunctionKey(
+        canvas: Canvas,
+        rect: RectF,
+        key: FunctionKey,
+        isPressedKey: Boolean,
+    ) {
         functionLabelPaint.textSize = sp(13.5f)
         functionLabelPaint.color = KeyboardColors.keyText
         canvas.drawText(
@@ -255,6 +272,9 @@ class FlickKeyboardView @JvmOverloads constructor(
             baselineFor(functionLabelPaint, rect.centerY()),
             functionLabelPaint,
         )
+        if (key.flickLabels.isNotEmpty()) {
+            drawSubLabels(canvas, rect, isPressedKey, key.flickLabels.toList())
+        }
     }
 
     /**
@@ -460,6 +480,8 @@ class FlickKeyboardView @JvmOverloads constructor(
             KeyAction.CURSOR_RIGHT -> listener?.onCursorMove(left = false)
             KeyAction.ENTER -> listener?.onEnter()
             KeyAction.TRANSFORM -> listener?.onTransformPrevious()
+            KeyAction.SMALL -> listener?.onSmallPrevious()
+            KeyAction.DAKUTEN -> listener?.onDakutenPrevious()
             KeyAction.HANDAKUTEN -> listener?.onHandakutenPrevious()
             KeyAction.NUMBER_TOGGLE -> listener?.onNumberToggle()
             KeyAction.KANA_TOGGLE -> listener?.onKanaToggle()
@@ -495,7 +517,13 @@ class FlickKeyboardView @JvmOverloads constructor(
         }
         when (key) {
             is FlickKey -> key.output(direction)?.let { listener?.onText(it) }
-            is FunctionKey -> dispatch(key.action)
+            is FunctionKey -> dispatch(
+                if (direction == FlickDirection.CENTER) {
+                    key.action
+                } else {
+                    key.flickActions[direction] ?: key.action
+                },
+            )
             is SpacerKey -> Unit
         }
     }

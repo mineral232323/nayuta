@@ -863,39 +863,50 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
     // ------------------------------------------------------------------
 
     /**
-     * 直前の 1 文字を変換する。文字の種類で濁点か小文字かを決める。
+     * 中央（と下フリック）: 文字種に応じて小文字・濁点・半濁点を巡回する。
      *
-     * - か/さ/た/は行（つ を除く）→ 濁点（か→が）
-     * - それ以外（あ/や/わ行・つ）→ 小文字（あ→ぁ、つ→っ）
-     * - すでに濁点・小文字なら元に戻す（同じキーでトグル）
+     * - あ/や/わ行・つ → 小文字（あ→ぁ、つ→っ）。もう一度で元に戻る
+     * - か/さ/た行（つ を除く）→ 濁点（か→が）。もう一度で元に戻る
+     * - は行 → 濁点 → 半濁点 → 元（は→ば→ぱ→は）
      */
-    private fun transformTarget(ch: Char, handakuten: Boolean = false): Char? {
-        if (handakuten) {
-            // ダブルタップ: は →(1回目) ば →(2回目) ぱ になるよう、
-            // 濁点を一度外してから半濁点を当てる。
-            DAKUTEN_INVERSE[ch]?.let { base -> HANDAKUTEN_MAP[base]?.let { return it } }
-            HANDAKUTEN_INVERSE[ch]?.let { return it }
-            HANDAKUTEN_MAP[ch]?.let { return it }
-            return null
-        }
+    private fun autoTransform(ch: Char): Char? {
         SMALL_INVERSE[ch]?.let { return it }
-        DAKUTEN_INVERSE[ch]?.let { return it }
         HANDAKUTEN_INVERSE[ch]?.let { return it }
+        DAKUTEN_INVERSE[ch]?.let { base ->
+            return HANDAKUTEN_MAP[base] ?: base
+        }
         if (ch in SMALL_MAP) return SMALL_MAP[ch]
         if (ch != 'つ' && ch != 'ツ') DAKUTEN_MAP[ch]?.let { return it }
         return null
     }
 
-    override fun onHandakutenPrevious() = transformPrevious(handakuten = true)
+    /** 上フリック: 小文字化（すでに小文字なら変化なし）。 */
+    private fun smallTarget(ch: Char): Char? = SMALL_MAP[ch]
 
-    override fun onTransformPrevious() = transformPrevious(handakuten = false)
+    /** 左フリック: 濁点化（つ→づ も含む。すでに濁点なら変化なし）。 */
+    private fun dakutenTarget(ch: Char): Char? = DAKUTEN_MAP[ch]
 
-    private fun transformPrevious(handakuten: Boolean) {
+    /** 右フリック: 半濁点化（ば→ぱ も含む。すでに半濁点なら変化なし）。 */
+    private fun handakutenTarget(ch: Char): Char? {
+        DAKUTEN_INVERSE[ch]?.let { base -> HANDAKUTEN_MAP[base]?.let { return it } }
+        return HANDAKUTEN_MAP[ch]
+    }
+
+    override fun onTransformPrevious() = transformPrevious(::autoTransform)
+
+    override fun onSmallPrevious() = transformPrevious(::smallTarget)
+
+    override fun onDakutenPrevious() = transformPrevious(::dakutenTarget)
+
+    override fun onHandakutenPrevious() = transformPrevious(::handakutenTarget)
+
+    /** 直前の 1 文字を [transform] で置き換える。変化しなければ何もしない。 */
+    private fun transformPrevious(transform: (Char) -> Char?) {
         when (state) {
             ComposingState.COMPOSING -> {
                 if (reading.isEmpty()) return
                 val last = reading[reading.length - 1]
-                val next = transformTarget(last, handakuten) ?: return
+                val next = transform(last) ?: return
                 reading.setCharAt(reading.length - 1, next)
                 candidates = emptyList()
                 selectedIndex = 0
@@ -906,19 +917,19 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
 
             ComposingState.CONVERTING -> {
                 commitCurrent()
-                transformCommitted(handakuten)
+                transformCommitted(transform)
             }
 
-            ComposingState.IDLE -> transformCommitted(handakuten)
+            ComposingState.IDLE -> transformCommitted(transform)
         }
     }
 
     /** 確定済みテキストの直前 1 文字を置き換える（未確定の読みが無いとき）。 */
-    private fun transformCommitted(handakuten: Boolean) {
+    private fun transformCommitted(transform: (Char) -> Char?) {
         val ic = currentInputConnection ?: return
         val before = ic.getTextBeforeCursor(1, 0)?.toString().orEmpty()
         if (before.length != 1) return
-        val next = transformTarget(before[0], handakuten) ?: return
+        val next = transform(before[0]) ?: return
         ic.deleteSurroundingText(1, 0)
         ic.commitText(next.toString(), 1)
     }
