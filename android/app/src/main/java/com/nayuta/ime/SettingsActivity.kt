@@ -65,7 +65,7 @@ class SettingsActivity : AppCompatActivity() {
 
     /** エクスポートした学習データ（JSON）を選んで読み込み、反映する。 */
     private val importLearnerLauncher =
-        registerForActivityResult(ActivityResultContracts.OpenDocument(arrayOf("*/*"))) { uri ->
+        registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             if (uri == null) return@registerForActivityResult
             val text = readText(uri) ?: return@registerForActivityResult
             val l = com.nayuta.ime.converter.bert.OnlineLearner.get(applicationContext, 384)
@@ -79,7 +79,7 @@ class SettingsActivity : AppCompatActivity() {
 
     /** エクスポートしたユーザー辞書（TSV）を選んで読み込み、反映する。 */
     private val importDictLauncher =
-        registerForActivityResult(ActivityResultContracts.OpenDocument(arrayOf("*/*"))) { uri ->
+        registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             if (uri == null) return@registerForActivityResult
             val text = readText(uri) ?: return@registerForActivityResult
             val ud = UserDictionary.get(applicationContext)
