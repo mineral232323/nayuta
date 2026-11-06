@@ -77,6 +77,8 @@ enum class KeyAction {
     MODE_TOGGLE,
     CURSOR_LEFT,
     CURSOR_RIGHT,
+    CURSOR_UP,
+    CURSOR_DOWN,
     ENTER,
 
     /** 直前の 1 文字を、文字種に応じて濁点化 or 小文字化する（トグル）。 */

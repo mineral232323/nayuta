@@ -13,12 +13,14 @@ import android.view.View
 import android.view.WindowInsets
 import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.ExtractedTextRequest
 import android.view.inputmethod.InputConnection
 import android.widget.LinearLayout
 import com.nayuta.ime.converter.Converter
 import com.nayuta.ime.converter.Converters
 import com.nayuta.ime.converter.dict.UserDictionary
 import com.nayuta.ime.keyboard.CandidateView
+import com.nayuta.ime.keyboard.FlickDirection
 import com.nayuta.ime.keyboard.FlickKeyboardView
 import com.nayuta.ime.keyboard.KeyboardColors
 import com.nayuta.ime.keyboard.KeyboardLayouts
@@ -66,6 +68,9 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
 
     /** 未確定の読み（ひらがな）。 */
     private val reading = StringBuilder()
+
+    /** 未確定の読みの中でのカーソル位置（0..reading.length）。 */
+    private var cursor = 0
 
     private var candidates: List<String> = emptyList()
 
@@ -279,6 +284,21 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
             resetComposing(finishComposing = true)
             return true
         }
+        // 入力中の矢印キー: アプリ側に渡すと変換が確定してしまうため、
+        // キーボードの ◀▶ と同じカーソル処理に流す（#5）
+        if (state != ComposingState.IDLE) {
+            val direction = when (keyCode) {
+                KeyEvent.KEYCODE_DPAD_LEFT -> FlickDirection.LEFT
+                KeyEvent.KEYCODE_DPAD_RIGHT -> FlickDirection.RIGHT
+                KeyEvent.KEYCODE_DPAD_UP -> FlickDirection.UP
+                KeyEvent.KEYCODE_DPAD_DOWN -> FlickDirection.DOWN
+                else -> null
+            }
+            if (direction != null) {
+                onCursorMove(direction)
+                return true
+            }
+        }
         return super.onKeyDown(keyCode, event)
     }
 
@@ -293,7 +313,10 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
         when (text) {
             KanaMarks.DAKUTEN -> applyMark(DAKUTEN_MAP, KanaMarks.DAKUTEN_CHAR)
             KanaMarks.HANDAKUTEN -> applyMark(HANDAKUTEN_MAP, KanaMarks.HANDAKUTEN_CHAR)
-            else -> reading.append(text)
+            else -> {
+                reading.insert(cursor, text)
+                cursor += text.length
+            }
         }
 
         if (mode == KeyboardMode.ALPHABET && shiftOn) {
@@ -313,6 +336,8 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
         cancelLiveConversion()
         if (segMode) return
         if (reading.isEmpty()) return
+        // 読みの途中にカーソルがあるときは、勝手に変換結果へ差し替えない
+        if (cursor != reading.length) return
         val target = reading.toString()
         val delay = NayutaSettings.liveDelayMs
         if (delay <= 0) return
@@ -349,6 +374,7 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
                 if (generation != convertGeneration) return@post
                 if (reading.toString() != target) return@post
                 if (state != ComposingState.COMPOSING) return@post
+                if (cursor != reading.length) return@post
                 livePreview = result.firstOrNull() ?: target
                 render(candidatesChanged = false)
             }
@@ -369,11 +395,13 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
             }
 
             ComposingState.COMPOSING -> {
-                if (reading.isNotEmpty()) {
-                    reading.deleteCharAt(reading.length - 1)
+                if (cursor > 0) {
+                    reading.deleteCharAt(cursor - 1)
+                    cursor--
                 }
                 livePreview = null
                 if (reading.isEmpty()) {
+                    cursor = 0
                     candidates = emptyList()
                     selectedIndex = 0
                     state = ComposingState.IDLE
@@ -422,15 +450,101 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
         }
     }
 
-    override fun onCursorMove(left: Boolean) {
+    override fun onCursorMove(direction: FlickDirection) {
         if (segMode) {
-            adjustSegmentBoundary(left)
+            when (direction) {
+                FlickDirection.LEFT -> adjustSegmentBoundary(left = true)
+                FlickDirection.RIGHT -> adjustSegmentBoundary(left = false)
+                else -> Unit
+            }
             return
         }
+        when (state) {
+            ComposingState.IDLE -> sendCursorKey(direction)
+
+            // 入力中: 左右は確定せず読みの中を移動、上下は読みを確定して移動（#5, #6）
+            // 端にいても矢印操作でライブ変換のプレビューは解除する
+            ComposingState.COMPOSING -> handleComposingMove(direction, forceRender = true)
+
+            ComposingState.CONVERTING -> {
+                // 候補を確定せず、読みの編集に戻してカーソルを動かす（#5）
+                candidates = emptyList()
+                selectedIndex = 0
+                livePreview = null
+                state = if (reading.isEmpty()) ComposingState.IDLE else ComposingState.COMPOSING
+                if (state == ComposingState.COMPOSING) {
+                    handleComposingMove(direction, forceRender = true)
+                } else {
+                    render()
+                    sendCursorKey(direction)
+                }
+            }
+        }
+    }
+
+    private fun handleComposingMove(direction: FlickDirection, forceRender: Boolean = false) {
+        when (direction) {
+            FlickDirection.LEFT,
+            FlickDirection.RIGHT -> moveComposingCursor(direction, forceRender)
+
+            FlickDirection.UP,
+            FlickDirection.DOWN -> commitReadingAndMove(direction)
+
+            FlickDirection.CENTER -> Unit
+        }
+    }
+
+    /**
+     * 上下移動は読みの行を離れるため、読みをそのまま（変換せずに）確定してから動かす。
+     * 左右のように読みの中へ留まることはできない。
+     */
+    private fun commitReadingAndMove(direction: FlickDirection) {
         val ic = currentInputConnection ?: return
-        // 変換中なら確定してから動かす（編集中の読みを壊さない）
-        if (state != ComposingState.IDLE) commitCurrent()
-        val code = if (left) KeyEvent.KEYCODE_DPAD_LEFT else KeyEvent.KEYCODE_DPAD_RIGHT
+        val raw = reading.toString()
+        if (raw.isNotEmpty()) ic.commitText(raw, 1)
+        resetComposing(finishComposing = false)
+        sendCursorKey(direction)
+    }
+
+    /**
+     * 未確定の読みの中のカーソルを動かす。左右のみ。
+     * 端にいるときは何もしない（勝手に確定しない）。
+     */
+    private fun moveComposingCursor(direction: FlickDirection, forceRender: Boolean = false) {
+        val moved = when (direction) {
+            FlickDirection.LEFT -> if (cursor > 0) {
+                cursor--
+                true
+            } else {
+                false
+            }
+
+            FlickDirection.RIGHT -> if (cursor < reading.length) {
+                cursor++
+                true
+            } else {
+                false
+            }
+
+            else -> false
+        }
+        if (!moved && !forceRender) return
+        // 読みの途中ではライブ変換のプレビューを出さない
+        cancelLiveConversion()
+        livePreview = null
+        render()
+    }
+
+    /** 確定済みテキストのカーソルを上下左右に動かす。 */
+    private fun sendCursorKey(direction: FlickDirection) {
+        val ic = currentInputConnection ?: return
+        val code = when (direction) {
+            FlickDirection.LEFT -> KeyEvent.KEYCODE_DPAD_LEFT
+            FlickDirection.RIGHT -> KeyEvent.KEYCODE_DPAD_RIGHT
+            FlickDirection.UP -> KeyEvent.KEYCODE_DPAD_UP
+            FlickDirection.DOWN -> KeyEvent.KEYCODE_DPAD_DOWN
+            FlickDirection.CENTER -> return
+        }
         ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, code))
         ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, code))
     }
@@ -826,7 +940,10 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
             }
 
             ComposingState.COMPOSING -> {
-                ic?.setComposingText(livePreview ?: reading.toString(), 1)
+                val text = livePreview ?: reading.toString()
+                ic?.setComposingText(text, 1)
+                // 読みの途中にカーソルがあるときは、その位置に戻す
+                if (livePreview == null) placeComposingCursor(ic, text.length, cursor)
                 if (candidatesChanged) candidateView?.clear()
             }
 
@@ -842,6 +959,21 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
         }
     }
 
+    /**
+     * `setComposingText(text, 1)` はカーソルを末尾に置くので、読みの途中に
+     * カーソルがある場合だけ、その位置へ戻す。
+     */
+    private fun placeComposingCursor(ic: InputConnection?, textLength: Int, pos: Int) {
+        if (ic == null || pos == textLength) return
+        val et = ic.getExtractedText(ExtractedTextRequest(), 0) ?: return
+        val end = et.startOffset + et.selectionStart
+        val start = end - textLength
+        if (start < 0) return
+        val absolute = (start + pos).coerceIn(start, start + textLength)
+        ic.setSelection(absolute, absolute)
+        android.util.Log.d("NayutaCursor", "len=$textLength pos=$pos start=$start abs=$absolute")
+    }
+
     private fun resetComposing(finishComposing: Boolean) {
         convertGeneration++
         segGeneration++
@@ -849,6 +981,7 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
         cancelLiveConversion()
         livePreview = null
         reading.setLength(0)
+        cursor = 0
         candidates = emptyList()
         selectedIndex = 0
         state = ComposingState.IDLE
@@ -904,10 +1037,10 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
     private fun transformPrevious(transform: (Char) -> Char?) {
         when (state) {
             ComposingState.COMPOSING -> {
-                if (reading.isEmpty()) return
-                val last = reading[reading.length - 1]
-                val next = transform(last) ?: return
-                reading.setCharAt(reading.length - 1, next)
+                if (reading.isEmpty() || cursor == 0) return
+                val index = cursor - 1
+                val next = transform(reading[index]) ?: return
+                reading.setCharAt(index, next)
                 candidates = emptyList()
                 selectedIndex = 0
                 livePreview = null
@@ -936,15 +1069,19 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
 
     private fun applyMark(map: Map<Char, Char>, fallback: Char) {
         if (reading.isEmpty()) {
-            reading.append(fallback)
+            reading.insert(cursor, fallback.toString())
+            cursor++
             return
         }
-        val lastIndex = reading.length - 1
-        val replaced = map[reading[lastIndex]]
+        // 読みの先頭にカーソルがあるときは、直前の文字がないので何もしない
+        if (cursor == 0) return
+        val index = cursor - 1
+        val replaced = map[reading[index]]
         if (replaced != null) {
-            reading.setCharAt(lastIndex, replaced)
+            reading.setCharAt(index, replaced)
         } else {
-            reading.append(fallback)
+            reading.insert(cursor, fallback.toString())
+            cursor++
         }
     }
 

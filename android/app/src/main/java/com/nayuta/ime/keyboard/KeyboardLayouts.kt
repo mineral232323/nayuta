@@ -45,6 +45,22 @@ object KeyboardLayouts {
         FunctionKey(label = label, action = action, widthWeight = weight)
 
     /**
+     * カーソル移動キー。タップは左右、フリックは上下左右に動く（Gboard と同じ）。
+     */
+    private fun cursorKey(label: String, action: KeyAction, weight: Float = AUX): FunctionKey =
+        FunctionKey(
+            label = label,
+            action = action,
+            widthWeight = weight,
+            flickActions = mapOf(
+                FlickDirection.UP to KeyAction.CURSOR_UP,
+                FlickDirection.DOWN to KeyAction.CURSOR_DOWN,
+                FlickDirection.LEFT to KeyAction.CURSOR_LEFT,
+                FlickDirection.RIGHT to KeyAction.CURSOR_RIGHT,
+            ),
+        )
+
+    /**
      * 直前の文字を小文字/濁点/半濁点に変えるキー。中央グリッド（ま の下）に置くので
      * 幅は通常キーと同じ 1.0（補助列の AUX ではない）。
      *
@@ -126,11 +142,11 @@ object KeyboardLayouts {
         ),
         KeyboardRow(
             listOf(
-                aux("◀", KeyAction.CURSOR_LEFT),
+                cursorKey("◀", KeyAction.CURSOR_LEFT),
                 gojuon("た", "ち", "つ", "て", "と"),
                 gojuon("な", "に", "ぬ", "ね", "の"),
                 gojuon("は", "ひ", "ふ", "へ", "ほ"),
-                aux("▶", KeyAction.CURSOR_RIGHT),
+                cursorKey("▶", KeyAction.CURSOR_RIGHT),
             ),
         ),
         KeyboardRow(
@@ -185,11 +201,11 @@ object KeyboardLayouts {
         ),
         KeyboardRow(
             listOf(
-                numAux("◀", KeyAction.CURSOR_LEFT),
+                cursorKey("◀", KeyAction.CURSOR_LEFT, NUM_AUX),
                 digit("4"),
                 digit("5"),
                 digit("6"),
-                numAux("▶", KeyAction.CURSOR_RIGHT),
+                cursorKey("▶", KeyAction.CURSOR_RIGHT, NUM_AUX),
             ),
         ),
         KeyboardRow(
