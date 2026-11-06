@@ -17,6 +17,28 @@ ASSET_DIR="$REPO_ROOT/android/app/src/main/assets"
 TAG="${NAYUTA_RELEASE_TAG:-v0.2.5-pre}"
 CACHE_DIR="$REPO_ROOT/.cache/release"
 
+fetch_url() {  # fetch_url <out> <url> — curl 失敗時は python urllib でフォールバック
+    local out=$1 url=$2
+    if curl -sS -L --fail -o "$out" "$url"; then
+        return 0
+    fi
+    rm -f "$out"
+    python3 - "$out" "$url" <<'PYEOF'
+import sys
+import urllib.request
+
+urllib.request.urlretrieve(sys.argv[2], sys.argv[1])
+PYEOF
+}
+
+hash_file() {  # sha256（sha256sum 無しの環境では shasum）
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$1" | cut -d' ' -f1
+    else
+        shasum -a 256 "$1" | cut -d' ' -f1
+    fi
+}
+
 # origin から owner/repo を取る（fork でも動くように）
 REMOTE="$(git -C "$REPO_ROOT" remote get-url origin 2>/dev/null || true)"
 SLUG="$(printf '%s' "$REMOTE" | sed -E 's#.*github\.com[/:]##; s#\.git$##')"
@@ -44,7 +66,7 @@ for flavor in release debug; do
         fi
         URL="https://github.com/$SLUG/releases/download/$TAG/$cand"
         echo "==> APK を取得中: $URL"
-        if curl -sS -L --fail -o "$APK" "$URL"; then
+        if fetch_url "$APK" "$URL"; then
             APK_NAME="$cand"
             break 2
         fi
@@ -74,6 +96,52 @@ for dir in dict model; do
         cp -r "$tmp_dir/assets/$dir/." "$ASSET_DIR/$dir/"
     fi
 done
+
+# ---------------------------------------------------------------------------
+# v3 スコアラー overlay（HF: Mineral232323/nayuta-scorer-v3）
+#
+# リリース APK 同梱の model/scorer.onnx は再学習前 (v2) の重み。再学習 v3 の
+# fp32 ONNX を取得して動的 int8 (QInt8) に量子化し、model/scorer.onnx を差し替える。
+# 辞書 (dict/) は APK 同梱のものをそのまま使う。
+# 取得に失敗した場合は APK 同梱の v2 のまま続行する（warn）。
+#
+#   無効化:   NAYUTA_V3_SCORER=0
+#   差し替え: NAYUTA_V3_SCORER_REPO / NAYUTA_V3_SCORER_FILE / NAYUTA_V3_SCORER_SHA256
+# ---------------------------------------------------------------------------
+if [[ "${NAYUTA_V3_SCORER:-1}" == 1 ]]; then
+    scorer_fp32="$CACHE_DIR/${NAYUTA_V3_SCORER_FILE:-scorer_online_fp32.onnx}"
+    scorer_url="https://huggingface.co/${NAYUTA_V3_SCORER_REPO:-Mineral232323/nayuta-scorer-v3}/resolve/main/${scorer_fp32##*/}"
+    expected_sha="${NAYUTA_V3_SCORER_SHA256:-dcf687fc097a67b82ec571ac30f4d2bdd5e9b5ab4c0c63fae38478e4812e7477}"
+
+    echo "==> v3 scorer を取得中: $scorer_url"
+    if fetch_url "$scorer_fp32" "$scorer_url"; then
+        actual_sha="$(hash_file "$scorer_fp32")"
+        if [[ -n "$expected_sha" && "$actual_sha" != "$expected_sha" ]]; then
+            echo "error: v3 scorer fp32 ONNX の sha256 が一致しません" >&2
+            echo "       expected: $expected_sha" >&2
+            echo "       got:      $actual_sha" >&2
+            echo "       重みを更新した場合は NAYUTA_V3_SCORER_SHA256 で期待値を指定してください" >&2
+            exit 1
+        fi
+
+        pydeps="$CACHE_DIR/pydeps"
+        if [[ ! -d "$pydeps/onnxruntime" ]]; then
+            pip3 install --quiet --target "$pydeps" onnxruntime onnx \
+                || pip3 install --quiet --break-system-packages --target "$pydeps" onnxruntime onnx \
+                || true
+        fi
+        mkdir -p "$ASSET_DIR/model"
+        if PYTHONPATH="$pydeps${PYTHONPATH:+:$PYTHONPATH}" python3 "$REPO_ROOT/train/quantize_onnx.py" \
+                --fp32 "$scorer_fp32" --out "$ASSET_DIR/model/scorer.onnx"; then
+            echo "    scorer.onnx sha256=$(hash_file "$ASSET_DIR/model/scorer.onnx")"
+        else
+            echo "warn: int8 量子化に失敗。fp32 のまま model/scorer.onnx を配置します（APK が約39MB増えます）" >&2
+            cp "$scorer_fp32" "$ASSET_DIR/model/scorer.onnx"
+        fi
+    else
+        echo "warn: v3 scorer の取得に失敗。APK 同梱の scorer.onnx (v2) をそのまま使います" >&2
+    fi
+fi
 
 echo "==> 展開しました: $ASSET_DIR"
 find "$ASSET_DIR/dict" "$ASSET_DIR/model" -type f -printf '    %P\t%s bytes\n' 2>/dev/null | sort
