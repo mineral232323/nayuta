@@ -207,3 +207,8 @@ rm -rf .cache/android
   フォールバックする（ログ `NayutaBert` に出る）。
 - **GPU が無い** — 学習・評価は CPU でも動くが、`train.train` は現実的な時間で終わらない。
   推論と CLI の確認は CPU で十分。
+
+## CI/CD
+
+PR のビルド検証と、master マージ時の pre-release への APK 自動添付の運用は
+[ci-cd.md](ci-cd.md) を参照。

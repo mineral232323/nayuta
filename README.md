@@ -138,11 +138,15 @@ APK は約 54MB（ONNX Runtime のネイティブライブラリが大半）。
 
 ### 4. リリース（CI/CD が自動で実行）
 
-`v0.2.6-pre` のようなタグを push するか、GitHub の Actions 画面から「Release」を手動実行すると、
-`.github/workflows/release.yml` がビルドして pre-release に `nayuta-<version>-debug.apk` を添付する。
+**PR を master にマージするだけで**、`v<versionName>-pre`（現バージョンなら `v0.2.5-pre`）の pre-release に
+`nayuta-<version>-debug.apk` が自動で添付（または上書き）される。
+`v*` タグの push や、Actions 画面から「Release」の手動実行でも同じことができる。
 モデル・辞書のアセットは「自分を除く最新リリース」から自動取得する（`scripts/android/fetch_assets.sh`）。
 PR と master への push では `.github/workflows/ci.yml` が `assembleDebug` + `lintDebug` を実行し、
 APK をビルド成果物（artifact）として保存する。
+
+バージョンを上げるには `android/app/build.gradle.kts` の `versionName` / `versionCode` を編集してマージする。
+詳しい運用は [docs/ci-cd.md](docs/ci-cd.md) を参照。
 
 ## 使い方
 

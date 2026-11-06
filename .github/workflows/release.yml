@@ -12,6 +12,10 @@ on:
   push:
     branches: [master]
     tags: ["v*"]
+    # ドキュメントのみの変更では pre-release を更新しない
+    paths-ignore:
+      - "docs/**"
+      - "*.md"
   workflow_dispatch:
     inputs:
       ref:
