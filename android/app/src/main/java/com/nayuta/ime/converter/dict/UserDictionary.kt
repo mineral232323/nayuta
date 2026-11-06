@@ -66,6 +66,32 @@ class UserDictionary private constructor(
         return out
     }
 
+    /**
+     * エクスポートした TSV（reading\tsurface の改行区切り）を読み込む。
+     * 既存と重複するものは追加しない。ファイルを逆順で処理してエクスポート時の
+     * 候補順序（新しいものが先頭）を復元する。
+     *
+     * @return 新たに追加した件数
+     */
+    fun importTsv(text: String): Int {
+        var added = 0
+        for (line in text.lines().asReversed()) {
+            if (line.isEmpty() || line[0] == '#') continue
+            val i = line.indexOf('\t')
+            if (i <= 0) continue
+            val reading = line.substring(0, i)
+            val surface = line.substring(i + 1)
+            if (surface.isEmpty()) continue
+            val list = cache.getOrPut(reading) { mutableListOf() }
+            if (!list.contains(surface)) {
+                list.add(0, surface)
+                added++
+            }
+        }
+        if (added > 0) persist()
+        return added
+    }
+
     /** 全件削除。 */
     fun clear() {
         cache.clear()

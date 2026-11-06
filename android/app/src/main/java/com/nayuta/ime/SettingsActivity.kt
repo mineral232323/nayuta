@@ -63,6 +63,31 @@ class SettingsActivity : AppCompatActivity() {
             writeText(uri, sb.toString(), "ユーザー辞書をエクスポートしました（${ud.size} 語）")
         }
 
+    /** エクスポートした学習データ（JSON）を選んで読み込み、反映する。 */
+    private val importLearnerLauncher =
+        registerForActivityResult(ActivityResultContracts.OpenDocument(arrayOf("*/*"))) { uri ->
+            if (uri == null) return@registerForActivityResult
+            val text = readText(uri) ?: return@registerForActivityResult
+            val l = com.nayuta.ime.converter.bert.OnlineLearner.get(applicationContext, 384)
+            if (l.importJson(text)) {
+                toast("学習データをインポートしました（更新 ${l.updateCount} 回）")
+            } else {
+                toast("学習データの読み込みに失敗しました（JSON 形式・hidden 次元を確認してください）")
+            }
+            refreshOnline()
+        }
+
+    /** エクスポートしたユーザー辞書（TSV）を選んで読み込み、反映する。 */
+    private val importDictLauncher =
+        registerForActivityResult(ActivityResultContracts.OpenDocument(arrayOf("*/*"))) { uri ->
+            if (uri == null) return@registerForActivityResult
+            val text = readText(uri) ?: return@registerForActivityResult
+            val ud = UserDictionary.get(applicationContext)
+            val added = ud.importTsv(text)
+            toast("ユーザー辞書をインポートしました（新規 $added 件 / 計 ${ud.size} 語）")
+            refreshUserDict()
+        }
+
     private fun dp(v: Int): Int = (v * density).toInt()
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -186,6 +211,21 @@ class SettingsActivity : AppCompatActivity() {
                         ).apply { topMargin = dp(8); bottomMargin = dp(8) }
                     },
                 )
+                addView(divider())
+                addView(
+                    MaterialButton(
+                        this@SettingsActivity,
+                        null,
+                        com.google.android.material.R.attr.materialButtonOutlinedStyle,
+                    ).apply {
+                        text = "学習データをインポート"
+                        setOnClickListener { importLearnerLauncher.launch(arrayOf("*/*")) }
+                        layoutParams = LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.WRAP_CONTENT,
+                        ).apply { topMargin = dp(8); bottomMargin = dp(8) }
+                    },
+                )
             },
         )
 
@@ -221,6 +261,21 @@ class SettingsActivity : AppCompatActivity() {
                     ).apply {
                         text = "ユーザー辞書をエクスポート"
                         setOnClickListener { exportDictLauncher.launch("nayuta-user-dict.tsv") }
+                        layoutParams = LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.WRAP_CONTENT,
+                        ).apply { topMargin = dp(8); bottomMargin = dp(8) }
+                    },
+                )
+                addView(divider())
+                addView(
+                    MaterialButton(
+                        this@SettingsActivity,
+                        null,
+                        com.google.android.material.R.attr.materialButtonOutlinedStyle,
+                    ).apply {
+                        text = "ユーザー辞書をインポート"
+                        setOnClickListener { importDictLauncher.launch(arrayOf("*/*")) }
                         layoutParams = LinearLayout.LayoutParams(
                             ViewGroup.LayoutParams.MATCH_PARENT,
                             ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -289,14 +344,24 @@ class SettingsActivity : AppCompatActivity() {
             contentResolver.openOutputStream(uri)?.use { os ->
                 os.write(text.toByteArray(Charsets.UTF_8))
             } ?: throw java.io.IOException("出力ストリームを開けませんでした")
-            android.widget.Toast.makeText(this, okMessage, android.widget.Toast.LENGTH_SHORT).show()
+            toast(okMessage)
         } catch (e: Exception) {
-            android.widget.Toast.makeText(
-                this,
-                "エクスポートに失敗しました: ${e.message}",
-                android.widget.Toast.LENGTH_LONG,
-            ).show()
+            toast("エクスポートに失敗しました: ${e.message}")
         }
+    }
+
+    private fun readText(uri: Uri): String? {
+        return try {
+            contentResolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) }
+                ?: throw java.io.IOException("入力ストリームを開けませんでした")
+        } catch (e: Exception) {
+            toast("読み込みに失敗しました: ${e.message}")
+            null
+        }
+    }
+
+    private fun toast(message: String) {
+        android.widget.Toast.makeText(this, message, android.widget.Toast.LENGTH_LONG).show()
     }
 
     // ------------------------------------------------------------------

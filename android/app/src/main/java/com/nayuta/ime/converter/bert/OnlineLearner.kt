@@ -84,6 +84,27 @@ class OnlineLearner private constructor(
         persist()
     }
 
+    /**
+     * エクスポートした JSON を読み込んで反映する。
+     * 形式: {"type":"nayuta-online-learner","version":1,"hidden":H,"updateCount":N,"w":[...]}
+     *
+     * @return 正しく読み込めた場合 true（hidden不一致・形式不正なら false で何も変えない）
+     */
+    fun importJson(json: String): Boolean {
+        return try {
+            val o = org.json.JSONObject(json)
+            if (o.optString("type") != "nayuta-online-learner") return false
+            val arr = o.getJSONArray("w")
+            if (arr.length() != hidden) return false
+            for (i in 0 until hidden) w[i] = arr.getDouble(i).toFloat()
+            updateCount = o.optInt("updateCount", updateCount)
+            persist()
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
     companion object {
         private const val PREFS = "nayuta_online"
         private const val KEY_W = "w"
