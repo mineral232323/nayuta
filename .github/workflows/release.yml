@@ -5,7 +5,8 @@ name: Release
 #   既存なら APK を上書き（--clobber）する
 # - v* タグ push: そのタグ名で pre-release を作成する
 # - 手動実行: ref / tag を指定可（tag 未指定時は master とみなして自動採番）
-# ビルドした debug APK を nayuta-<version>-debug.apk として添付する。
+# ビルドした release APK（v2+v3 署名済み）を nayuta-<version>-release.apk として添付する。
+# 署名鍵は Secrets（NAYUTA_KEYSTORE_BASE64 / NAYUTA_STORE_PASSWORD）から渡す。未登録なら失敗する。
 # assets（モデル・辞書）は「自分を除く最新リリース」から取得する。
 
 on:
@@ -39,17 +40,48 @@ concurrency:
 jobs:
   release:
     runs-on: ubuntu-latest
+    # Environment "release" の Required reviewers を満たすまでジョブは開始しない。
+    # ビルドも鍵の復号も承認後なので、署名鍵が人の確認なしに使われることはない。
+    environment: release
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref || github.ref }}
 
-      - name: Build environment + assembleDebug
+      # secret 未登録のまま走ると debug 署名の APK を配布してしまうため、先に落とす
+      - name: Require signing secrets
+        shell: bash
+        env:
+          KEYSTORE_B64: ${{ secrets.NAYUTA_KEYSTORE_BASE64 }}
+        run: |
+          if [[ -z "$KEYSTORE_B64" ]]; then
+            echo "::error::NAYUTA_KEYSTORE_BASE64 が未登録です（gh secret set で登録してください）"
+            exit 1
+          fi
+
+      - name: Build environment + assembleRelease
         uses: ./.github/actions/setup-env
         with:
+          tasks: "assembleRelease"
           self-tag: ${{ inputs.tag || github.ref_name }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          keystore-base64: ${{ secrets.NAYUTA_KEYSTORE_BASE64 }}
+          store-password: ${{ secrets.NAYUTA_STORE_PASSWORD }}
+
+      # 鍵の取り違え・debug 署名へのフォールバックを検出する（指紋は公開情報なので直書きでよい）
+      - name: Verify release signature
+        shell: bash
+        run: |
+          APK=android/app/build/outputs/apk/release/app-release.apk
+          OUT="$(.android-sdk/build-tools/35.0.0/apksigner verify --print-certs "$APK")"
+          echo "$OUT"
+          ACTUAL="$(sed -n 's/.*SHA-256 digest: //p' <<< "$OUT")"
+          EXPECTED=f091899b908eecdd475f42fea97dd96de0edec829768806f8e8a06b5141f5ae1
+          if [[ "$ACTUAL" != "$EXPECTED" ]]; then
+            echo "::error::署名鍵が想定と違います: $ACTUAL"
+            exit 1
+          fi
 
       - name: Create pre-release with APK
         shell: bash
@@ -61,10 +93,10 @@ jobs:
             VER="$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' android/app/build.gradle.kts)"
             TAG_NAME="v${VER}-pre"
           fi
-          # fetch_assets.sh の命名規則に合わせる（v0.2.6-pre → nayuta-v0.2.6-debug.apk。v は残す）
+          # fetch_assets.sh の命名規則に合わせる（v0.2.6-pre → nayuta-v0.2.6-release.apk。v は残す）
           APK_OUT="nayuta-${TAG_NAME}"
-          APK_OUT="${APK_OUT%-pre}-debug.apk"
-          cp android/app/build/outputs/apk/debug/app-debug.apk "$APK_OUT"
+          APK_OUT="${APK_OUT%-pre}-release.apk"
+          cp android/app/build/outputs/apk/release/app-release.apk "$APK_OUT"
           if gh release view "$TAG_NAME" >/dev/null 2>&1; then
             gh release upload "$TAG_NAME" "$APK_OUT" --clobber
           else

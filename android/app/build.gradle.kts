@@ -1,11 +1,64 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
 }
 
+// ---------------------------------------------------------------------------
+// リリース署名鍵
+//
+// 鍵は android/keystore.properties（git 管理外）から読む。CI などファイルを
+// 置けない環境では NAYUTA_* 環境変数で上書きできる。優先順位は環境変数 > ファイル。
+//   NAYUTA_STORE_FILE / NAYUTA_STORE_PASSWORD / NAYUTA_KEY_ALIAS / NAYUTA_KEY_PASSWORD
+//
+// どちらも無い場合（新規クローン・CI）は、従来どおり debug 署名で release を
+// ビルドする。鍵が揃った時点で自動的に release 署名に切り替わる。
+// ---------------------------------------------------------------------------
+val keystoreProps = Properties().apply {
+    val f = rootProject.file("keystore.properties")
+    if (f.isFile) f.inputStream().use { load(it) }
+}
+
+val envOrProp: (String, String) -> String? = { envName, key ->
+    System.getenv(envName)?.takeIf { it.isNotBlank() }
+        ?: keystoreProps.getProperty(key)?.takeIf { it.isNotBlank() }
+}
+
+// storeFile は android/ からの相対パスとして解決する（例: ../.cache/nayuta-release.p12）。
+val releaseStoreFile = envOrProp("NAYUTA_STORE_FILE", "storeFile")?.let { rootProject.file(it) }
+val releaseStorePassword = envOrProp("NAYUTA_STORE_PASSWORD", "storePassword")
+val releaseKeyAlias = envOrProp("NAYUTA_KEY_ALIAS", "keyAlias") ?: "nayuta"
+val releaseKeyPassword = envOrProp("NAYUTA_KEY_PASSWORD", "keyPassword") ?: releaseStorePassword
+val hasReleaseKey = releaseStoreFile?.isFile == true && !releaseStorePassword.isNullOrEmpty()
+
+if (!hasReleaseKey && gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) }) {
+    logger.lifecycle(
+        "warning: release 署名鍵が未設定のため debug 署名でビルドします。" +
+            " android/keystore.properties を用意してください（例: keystore.properties.example）。",
+    )
+}
+
 android {
     namespace = "com.nayuta.ime"
     compileSdk = 35
+
+    // 鍵が揃っている時だけ release 署名を作る。無ければ debug 署名にフォールバック。
+    signingConfigs {
+        if (hasReleaseKey) {
+            create("release") {
+                storeFile = releaseStoreFile
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+                // v3 署名も有効化しておく（将来 apksigner rotate で鍵ローテーションする余地）。
+                // minSdk 26 なので v1(JAR) は不要。
+                enableV3Signing = true
+            }
+        }
+    }
+    val releaseSigningConfig = signingConfigs.findByName("release")
+        ?: signingConfigs.getByName("debug")
 
     defaultConfig {
         applicationId = "com.nayuta.ime"
@@ -29,6 +82,8 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
+            // 鍵が無い環境では debug 署名（従来の挙動）でビルドを通す。
+            signingConfig = releaseSigningConfig
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
