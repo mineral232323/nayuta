@@ -1,11 +1,16 @@
 name: Release
 
-# v0.2.6-pre のようなタグを push するか、Actions 画面から手動実行すると、
-# debug APK をビルドして pre-release に nayuta-<version>-debug.apk を添付する。
+# master への push（PR マージ含む）・v* タグ push・手動実行で発火する。
+# - master push: versionName から vX.Y.Z-pre を導出し、その pre-release を作成するか
+#   既存なら APK を上書き（--clobber）する
+# - v* タグ push: そのタグ名で pre-release を作成する
+# - 手動実行: ref / tag を指定可（tag 未指定時は master とみなして自動採番）
+# ビルドした debug APK を nayuta-<version>-debug.apk として添付する。
 # assets（モデル・辞書）は「自分を除く最新リリース」から取得する。
 
 on:
   push:
+    branches: [master]
     tags: ["v*"]
   workflow_dispatch:
     inputs:
@@ -22,8 +27,9 @@ on:
 permissions:
   contents: write
 
+# master push とタグ push が同時に走って同じリリースを触らないよう直列化する
 concurrency:
-  group: release-${{ github.ref_name }}
+  group: release
   cancel-in-progress: false
 
 jobs:
