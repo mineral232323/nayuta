@@ -57,16 +57,23 @@ if [[ -z "$APK_NAME" ]]; then
 fi
 APK="$CACHE_DIR/$APK_NAME"
 
-echo "==> assets/ を展開中..."
+echo "==> assets/dict と assets/model を展開中..."
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
 unzip -q "$APK" 'assets/*' -d "$tmp_dir"
-if [[ ! -d "$tmp_dir/assets" ]]; then
-    echo "error: APK に assets/ がありません" >&2
+if [[ ! -d "$tmp_dir/assets/dict" && ! -d "$tmp_dir/assets/model" ]]; then
+    echo "error: APK に assets/dict も assets/model もありません" >&2
     exit 1
 fi
+
+# AGP が生成する assets/dexopt/ などは取り込まない（release ビルドで重複するため）
 mkdir -p "$ASSET_DIR"
-cp -r "$tmp_dir/assets/." "$ASSET_DIR/"
+for dir in dict model; do
+    if [[ -d "$tmp_dir/assets/$dir" ]]; then
+        mkdir -p "$ASSET_DIR/$dir"
+        cp -r "$tmp_dir/assets/$dir/." "$ASSET_DIR/$dir/"
+    fi
+done
 
 echo "==> 展開しました: $ASSET_DIR"
-find "$ASSET_DIR" -type f -printf '    %P\t%s bytes\n' | sort
+find "$ASSET_DIR/dict" "$ASSET_DIR/model" -type f -printf '    %P\t%s bytes\n' 2>/dev/null | sort
