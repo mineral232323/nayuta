@@ -13,6 +13,14 @@ inputs:
   github-token:
     description: "gh CLI（リリース一覧の取得）用トークン。composite 内では secrets を直接参照できないため呼び出し元から渡す"
     required: true
+  keystore-base64:
+    description: "リリース署名鍵(PKCS12)の base64。空なら debug 署名でビルドする（PR 検証用）"
+    required: false
+    default: ""
+  store-password:
+    description: "キーストアのパスワード。PKCS12 なので鍵パスワードも兼ねる"
+    required: false
+    default: ""
 
 runs:
   using: "composite"
@@ -54,6 +62,25 @@ runs:
         fi
         echo "assets from release: $PREV_TAG"
         NAYUTA_RELEASE_TAG="$PREV_TAG" bash scripts/android/fetch_assets.sh
+
+    # 署名鍵は呼び出し元から input で受け取り、.cache/ に復号して置く。
+    # build.gradle.kts は NAYUTA_* 環境変数を読むので、$GITHUB_ENV 経由で後続 step に渡す
+    # （composite の各 step は別シェルなので export では届かない）。
+    - name: Decode release keystore
+      if: inputs.keystore-base64 != ''
+      shell: bash
+      env:
+        KEYSTORE_B64: ${{ inputs.keystore-base64 }}
+        STORE_PW: ${{ inputs.store-password }}
+      run: |
+        mkdir -p .cache
+        printf '%s' "$KEYSTORE_B64" | base64 -d > .cache/nayuta-release.p12
+        chmod 600 .cache/nayuta-release.p12
+        {
+          echo "NAYUTA_STORE_FILE=../.cache/nayuta-release.p12"
+          echo "NAYUTA_KEY_ALIAS=nayuta"
+          echo "NAYUTA_STORE_PASSWORD=$STORE_PW"
+        } >> "$GITHUB_ENV"
 
     - name: Gradle build
       shell: bash

@@ -8,6 +8,8 @@ out/
 build/
 .gradle/
 local.properties
+# 署名鍵のパスワード類（鍵本体は .cache/ 側にあり、これも git 管理外）
+keystore.properties
 *.iml
 .idea/
 .android-sdk/
@@ -17,3 +19,6 @@ android/app/src/main/assets/model/
 
 # 個人情報が写り込む可能性があるため、スクリーンショットは追跡しない
 docs/images/
+
+# Kotlin ビルドの一時ファイル（Kotlin デーモンが落ちた時のログ等）
+.kotlin/

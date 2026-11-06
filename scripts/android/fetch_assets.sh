@@ -4,7 +4,7 @@
 #
 # モデルと辞書（合計 ~27MB）はリポジトリに入っていない。学習から作り直すには
 # Wikipedia ダンプと GPU が必要なので、開発環境のブートストラップ用に
-# リリース済み debug APK の中の assets/ を展開する。
+# リリース済み APK（署名済み release / 旧 debug のどちらでも可）の中の assets/ を展開する。
 #
 # 使い方:
 #   bash scripts/android/fetch_assets.sh
@@ -25,27 +25,31 @@ if [[ -z "$SLUG" ]]; then
     exit 1
 fi
 
-# APK 名の候補（新形式を優先し、旧形式 v付き も試す）
-#   v0.2.5-pre → nayuta-0.2.5-debug.apk（新） / nayuta-v0.2.5-debug.apk（旧）
+# APK 名の候補（署名済み release を優先し、debug 署名時代の配布物も後方互換で試す）
+#   v0.2.6-pre → nayuta-0.2.6-release.apk / nayuta-v0.2.6-release.apk
+#              → nayuta-0.2.6-debug.apk   / nayuta-v0.2.6-debug.apk（旧形式）
 BASE_NEW="${TAG#v}"; BASE_NEW="${BASE_NEW%-pre}"
 BASE_OLD="${TAG%-pre}"
 
 mkdir -p "$CACHE_DIR"
 APK_NAME=""
-for cand in "nayuta-${BASE_NEW}-debug.apk" "nayuta-${BASE_OLD}-debug.apk"; do
-    APK="$CACHE_DIR/$cand"
-    if [[ -f "$APK" ]]; then
-        APK_NAME="$cand"
-        echo "==> APK は取得済み: $APK"
-        break
-    fi
-    URL="https://github.com/$SLUG/releases/download/$TAG/$cand"
-    echo "==> APK を取得中: $URL"
-    if curl -sS -L --fail -o "$APK" "$URL"; then
-        APK_NAME="$cand"
-        break
-    fi
-    rm -f "$APK"
+for flavor in release debug; do
+    for base in "$BASE_NEW" "$BASE_OLD"; do
+        cand="nayuta-${base}-${flavor}.apk"
+        APK="$CACHE_DIR/$cand"
+        if [[ -f "$APK" ]]; then
+            APK_NAME="$cand"
+            echo "==> APK は取得済み: $APK"
+            break 2
+        fi
+        URL="https://github.com/$SLUG/releases/download/$TAG/$cand"
+        echo "==> APK を取得中: $URL"
+        if curl -sS -L --fail -o "$APK" "$URL"; then
+            APK_NAME="$cand"
+            break 2
+        fi
+        rm -f "$APK"
+    done
 done
 if [[ -z "$APK_NAME" ]]; then
     echo "error: タグ $TAG の APK が見つかりません（新旧両形式を試しました）" >&2
