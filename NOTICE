@@ -7,7 +7,8 @@ Copyright 2026 Nayuta contributors
 1. tohoku-nlp/bert-base-japanese-char-v3
 --------------------------------------------------------------------
   ライセンス: Apache License 2.0
-  用途: 文字レベル BERT エンコーダの初期重み（ファインチューニング元）
+  用途: 文字レベル BERT の語彙ファイル（vocab.txt）の利用、
+        および `--arch pretrained` 使用時の初期重み
   https://huggingface.co/tohoku-nlp/bert-base-japanese-char-v3
 
   本リポジトリの学習済みモデル（モデル重み）は、上記モデルを
@@ -22,37 +23,146 @@ Copyright 2026 Nayuta contributors
   https://www.edrdg.org/jmdict/j_jmdict.html
   https://www.edrdg.org/edrdg/licence.html
 
-  本リポジトリのビルド手順で生成される
-  `android/app/src/main/assets/dict/english.tsv(.gz)` は
-  JMdict から作られた派生データであり、CC BY-SA 4.0 で配布されます。
+  ※ 品質上の理由により、英語候補機能は既定で無効です。現在のビルド手順では
+     `train.build_english_lexicon` を実行せず、端末用アセット
+     `english.tsv(.gz)` も同梱しません。
+     過去の配布物に含まれる当該ファイルは CC BY-SA 4.0 で配布されています。
 
 --------------------------------------------------------------------
 3. SudachiDict
 --------------------------------------------------------------------
   ライセンス: Apache License 2.0
-  用途: 辞書（活用形・読みの揺れ）の生成
+  用途: 辞書（活用形・読みの揺れ・語彙）の生成
   https://github.com/WorksApplications/SudachiDict
+
+  同辞書には UniDic および mecab-unidic-NEologd の一部が含まれます。
+  同梱の LEGAL に従い、以下の帰属表示を転記します。
+
+  (3-a) UniDic
+    Copyright (c) 2011-2013, The UniDic Consortium
+    All rights reserved.
+    https://unidic.ninjal.ac.jp/
+
+    Redistribution and use in source and binary forms, with or
+    without modification, are permitted provided that the following
+    conditions are met:
+
+     * Redistributions of source code must retain the above copyright
+       notice, this list of conditions and the following disclaimer.
+
+     * Redistributions in binary form must reproduce the above
+       copyright notice, this list of conditions and the following
+       disclaimer in the documentation and/or other materials
+       provided with the distribution.
+
+     * Neither the name of the UniDic Consortium nor the names of its
+       contributors may be used to endorse or promote products derived
+       from this software without specific prior written permission.
+
+    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+    "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+    LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
+    FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
+    COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
+    INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+    (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+    SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+    HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+    STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+    ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
+    OF THE POSSIBILITY OF SUCH DAMAGE.
+
+  (3-b) NEologd (mecab-unidic-NEologd)
+    Copyright (C) 2015-2019 Toshinori Sato (@overlast)
+    https://github.com/neologd/mecab-unidic-neologd
+    帰属表示は下記 5. と同一です。
 
 --------------------------------------------------------------------
 4. 日本語 Wikipedia（ダンプデータ）
 --------------------------------------------------------------------
-  ライセンス: Creative Commons Attribution-ShareAlike 4.0 International
-              (CC BY-SA 4.0) / GNU Free Documentation License
-  用途: 単語頻度辞書・学習コーパス・bigram 統計の作成
+  ライセンス: Creative Commons Attribution-ShareAlike 3.0 Unported
+              (CC BY-SA 3.0) / GNU Free Documentation License
+  用途: 単語頻度辞書・学習コーパス・bigram 統計の作成、
+        記事タイトルと読み仮名の辞書エントリ生成
   https://ja.wikipedia.org/
   https://dumps.wikimedia.org/jawiki/
+  https://huggingface.co/datasets/wikimedia/wikipedia
 
   コーパス本文はリポジトリに含めていません（学習・統計の生成元としてのみ使用）。
+  記事タイトルは、本文冒頭の「'''表題'''（よみ）」表記または形態素解析の
+  読みから合成した読み仮名と組にして、辞書データ `data/lexicon_v3.tsv`
+  に含めています。
 
 --------------------------------------------------------------------
-5. ONNX Runtime
+5. mecab-ipadic-NEologd
+--------------------------------------------------------------------
+  ライセンス: Apache License 2.0
+  用途: 辞書（新語・固有名詞の読み）の生成
+  https://github.com/neologd/mecab-ipadic-neologd
+
+  Copyright (C) 2015-2019 Toshinori Sato (@overlast)
+
+  本データは以下の言語資源を使用しています（COPYING より転記）。
+
+    i.  株式会社はてなが提供するはてなキーワード一覧ファイル中の表記、
+        および読み仮名の大半。著作権は株式会社はてなに帰属。
+        http://developer.hatena.ne.jp/ja/documents/keyword/misc/catalog
+
+    ii. 日本郵便株式会社が提供する郵便番号データ中の表記、および読み仮名。
+        日本郵便は郵便番号データに限って著作権を主張しないと述べている。
+        http://www.post.japanpost.jp/zipcode/dl/readme.html
+
+    iii.スナフキん氏が提供する日本全国駅名一覧中の表記、および読み仮名。
+        著作権は同氏に帰属。利用は自由だが無保証。
+        http://www5a.biglobe.ne.jp/~harako/data/station.htm
+
+    iv. 工藤拓氏が提供する人名(姓/名)エントリデータ中の漢字表記の姓・名と
+        対応する読み仮名（Mozc の人名辞書を活用できるという考えに基づく）。
+        http://chasen.org/~taku/software/misc/personal_name.zip
+
+    v.  Web 上からクロールした大量の文書データから抽出した表記と読み仮名。
+        上記 i〜iv の言語資源の組合せによって得られる組のみを採録。
+
+  本リポジトリのビルドでは NEologd の seed/*.csv のみを使用し、
+  MeCab 用辞書 (mecab-ipadic) 本体は取り込んでいません。
+
+  ビルド手順で生成される `data/lexicon_v3.tsv`（および端末同梱の
+  `lexicon.tsv.gz`）は上記データから作られた派生データであり、
+  Apache License 2.0 で配布されます。
+
+--------------------------------------------------------------------
+6. mC4（日本語 web テキスト）
+--------------------------------------------------------------------
+  ライセンス: ODC-BY 1.0（C4 / mC4 の配布条件）
+  用途: 学習コーパス（web テキスト）の作成
+  https://huggingface.co/datasets/allenai/c4
+  https://huggingface.co/datasets/mc4
+
+  C4 / mC4 は Common Crawl から作られたデータセットで、ODC-BY 1.0 の下で
+  配布されています。本リポジトリはコーパス本文を含めず、学習データの
+  生成元としてのみ使用しています。
+
+--------------------------------------------------------------------
+7. 国会会議録（話し言葉コーパス）
+--------------------------------------------------------------------
+  ライセンス: 公共データ利用規約（PDL）1.0（CC BY 4.0 互換）
+              / 再配布パッケージは MIT License
+  用途: 学習コーパス（話し言葉）の作成、話し言葉ドメインの評価セット作成
+  https://kokkai.ndl.go.jp/
+  https://huggingface.co/datasets/Soma8622/kokkai_speech
+
+  国会会議録検索システムの公開データを利用しています。本リポジトリは
+  コーパス本文を含めず、学習データの生成元としてのみ使用しています。
+
+--------------------------------------------------------------------
+8. ONNX Runtime
 --------------------------------------------------------------------
   ライセンス: MIT License
   用途: 端末内でのモデル推論
   https://github.com/microsoft/onnxruntime
 
 --------------------------------------------------------------------
-6. AndroidX / Material Components for Android
+9. AndroidX / Material Components for Android
 --------------------------------------------------------------------
   ライセンス: Apache License 2.0
   用途: 設定画面の UI

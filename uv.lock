@@ -257,6 +257,7 @@ dependencies = [
     { name = "onnxruntime" },
     { name = "pyarrow" },
     { name = "sudachidict-core" },
+    { name = "sudachidict-full" },
     { name = "sudachipy" },
     { name = "torch", version = "2.15.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "sys_platform == 'darwin'" },
     { name = "torch", version = "2.15.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "sys_platform != 'darwin'" },
@@ -271,6 +272,7 @@ requires-dist = [
     { name = "onnxruntime", specifier = ">=1.20" },
     { name = "pyarrow", specifier = ">=17.0" },
     { name = "sudachidict-core", specifier = ">=20240409" },
+    { name = "sudachidict-full", specifier = ">=20240409" },
     { name = "sudachipy", specifier = ">=0.6.9" },
     { name = "torch", specifier = ">=2.6", index = "https://download.pytorch.org/whl/cpu" },
     { name = "transformers", specifier = ">=4.48" },
@@ -499,6 +501,15 @@ sdist = { url = "https://files.pythonhosted.org/packages/70/04/4e8698fcb26999fc9
 wheels = [
     { url = "https://files.pythonhosted.org/packages/3d/6a/9dddc36e33ff7f86e394315a77b90d0f41bfd161e011d77a8397662d53e0/sudachidict_core-20261015-py3-none-any.whl", hash = "sha256:6d7774b518e64c88a0578975d569590b3dae3b3c834f166486aa611879ee9d98", size = 76937301, upload-time = "2026-10-15T08:37:35.957Z" },
 ]
+
+[[package]]
+name = "sudachidict-full"
+version = "20261015"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "sudachipy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e9/bc/b30da4050cccae8826e8ecc3ade7bc042419548be77148bd6ae788bfc069/sudachidict_full-20261015.tar.gz", hash = "sha256:95ca913091db8a6be42b3c13782a45fb6a5acd9446540d7199ec968c0bf8cdc7", size = 9187, upload-time = "2026-10-15T08:32:34.513Z" }
 
 [[package]]
 name = "sudachipy"

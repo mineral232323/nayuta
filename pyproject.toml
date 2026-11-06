@@ -16,6 +16,8 @@ dependencies = [
     "pyarrow>=17.0",
     "sudachipy>=0.6.9",
     "sudachidict-core>=20240409",
+    # 辞書増強（train/build_lex_v3.py）用。full は core + NEologd 系の固有名詞を含む
+    "sudachidict-full>=20240409",
     "numpy>=1.26",
     "onnx>=1.16",
     "onnxruntime>=1.20",

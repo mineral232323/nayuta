@@ -152,21 +152,37 @@ class InferenceScorer(nn.Module):
         return self.out(self.proj(feats)).squeeze(-1)
 
 
+SCRATCH_ARCHS = {
+    # 実機用（現行）
+    "scratch-small": dict(
+        hidden_size=384, num_hidden_layers=6, num_attention_heads=6,
+        intermediate_size=1536,
+    ),
+    # Phase 4 の上限モデル（幅は同じで層だけ 2 倍）
+    "scratch-12l": dict(
+        hidden_size=384, num_hidden_layers=12, num_attention_heads=6,
+        intermediate_size=1536,
+    ),
+    # 幅を 2 倍にした比較用（レイテンシ予算が許せば実機候補）
+    "scratch-6l768": dict(
+        hidden_size=768, num_hidden_layers=6, num_attention_heads=12,
+        intermediate_size=3072,
+    ),
+}
+
+
 def build_encoder(arch: str, vocab_size: int, model_name: str = ""):
     """arch からエンコーダを組み立てる（学習・評価・書き出しで共用）。"""
-    if arch == "scratch-small":
+    if arch in SCRATCH_ARCHS:
         from transformers import BertConfig, BertModel
 
         cfg = BertConfig(
             vocab_size=vocab_size,
-            hidden_size=384,
-            num_hidden_layers=6,
-            num_attention_heads=6,
-            intermediate_size=1536,
             max_position_embeddings=192,
             type_vocab_size=1,
             hidden_dropout_prob=0.1,
             attention_probs_dropout_prob=0.1,
+            **SCRATCH_ARCHS[arch],
         )
         return BertModel(cfg)
     from transformers import AutoModel

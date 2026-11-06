@@ -50,25 +50,30 @@ BERT 再ランク（文字レベル BERT で各スパン×候補を文脈採点�
 表示・確定
 ```
 
-- モデル: `tohoku-nlp/bert-base-japanese-char-v3` をファインチューニングした
-  スパン採点器（6 層 / hidden 384 / 語彙 7027）
+- モデル: 文字レベル BERT のスパン採点器（6 層 / hidden 384 / 語彙 7027 / 14.0M パラメータ）。
+  12 層の上限モデルから蒸留して学習し、int8 量子化して端末に載せる
 - 端末推論: int8 量子化した ONNX（14.2MB）+ ONNX Runtime
 - 再ランクは 2 段階（unigram ビーム探索で候補経路を作り、その中のスパンを採点）
 
 ## 精度と速度
 
-評価: 日本語 Wikipedia から作った検証 2,000 文（文正解率）
+評価: 固定評価セット 2,000 文。Wikipedia（[`data/eval/wiki2000.jsonl`](data/eval/wiki2000.jsonl)）と
+国会会議録 = 話し言葉（[`data/eval/sns2000.jsonl`](data/eval/sns2000.jsonl)）。文正解率。
 
-| 構成 | 文正解率 |
-|---|---|
-| unigram ビーム探索のみ | 35.95% |
-| ＋ BERT 再ランク | 45.45% |
-| ＋ bigram 連接コスト ＋ BERT | **53.45%** |
+| 構成（beam 32 / want 48） | Wikipedia | 話し言葉 |
+|---|---|---|
+| unigram ビーム探索のみ | 38.80% | 16.55% |
+| ＋ bigram 連接コスト | 55.45% | 65.15% |
+| **＋ BERT 再ランク（v3）** | **57.10%** | **67.60%** |
+| （参考）再学習前の v2 一式 | 53.55% | 42.45% |
 
-- 到達可能な上限（正解が候補経路に含まれる率）: 70.70%
-- 正解分割を与えた場合の候補選択精度: 93.67%
-- 実機（AQUOS sense6 / Android 16）での変換時間: **定常 7〜11ms**、
-  初回のみ 350〜960ms（辞書・モデルの読み込み）
+- 天井（正解経路が辞書・候補内に存在）: **90.85%**（v2 は 84.95%）
+- 正解が N-best に入る率: 71.40%（beam 32/48）/ 74.20%（beam 128/256）
+- ビームを 128/256 に広げると Wikipedia **58.95%** / 話し言葉 **70.55%**（探索コストは約 4 倍）
+- 実機（AQUOS sense6 / Android 16）での変換時間: **定常 7〜11ms**（v2 時点）。
+  v3 は辞書が 14.5 万 → 50 万読みになるため、初回の辞書ロードが約 1.8s に増える見込み
+- 詳細は [docs/retrain-v3.md](docs/retrain-v3.md)（辞書・コーパス・文脈・蒸留の切り分け）と
+  [docs/phase0-ceiling.md](docs/phase0-ceiling.md)（天井の分解測定）
 
 ## リポジトリ構成
 
@@ -107,24 +112,36 @@ bash scripts/android/build.sh
 `scripts/android/fetch_assets.sh` で済む。
 
 ```bash
-# 1) コーパスから辞書と学習データを作る（日本語 Wikipedia の dump を data/raw に置く）
-python -m train.prep_data
+# 1) コーパスを取得（Wikipedia 全量 / mC4 web / 国会会議録）
+HF_HUB_DISABLE_XET=1 python -m train.fetch_corpus --what all
 
-# 2) 辞書を育てる（SudachiDict の活用形＋読みの揺れ）
-python -m train.build_lex_v2 --variant-penalty 4.5
+# 2) 学習データとコーパス辞書を作る
+#    文脈は記事・ドキュメント単位で引き継ぐ（付与率 35% → 99%）
+python -m train.prep_data \
+    --source wiki:'data/raw/*.parquet' \
+    --source web:'data/corpus/web/*.jsonl.gz' \
+    --source sns:'data/corpus/sns/*.jsonl.gz' --lines-per-doc 5
 
-# 3) カタカナ語→英単語（JMdict）
-python -m train.build_english_lexicon
+# 3) 辞書を育てる（SudachiDict full + NEologd + Wikipedia タイトル）
+python -m train.build_lex_v3 --corpus-lexicon data/lexicon.tsv \
+    --variant-penalty 6.0 --default-cost 18.0 --topk 8 \
+    --max-readings 500000 --max-rows 1200000 --max-size-mb 30
 
-# 4) BERT スパン採点器を学習（GPU 推奨）
-python -m train.train --arch scratch-small --lexicon lexicon_v2.tsv --alt-prob 0.25
+# 4) 上限モデル（12 層）を学習 → 6 層へ蒸留（GPU 推奨）
+python -m train.train --arch scratch-12l --k 8 \
+    --lexicon lexicon_v3.tsv --alt-prob 0.25 --hard-neg-prob 0.5 \
+    --out models/scorer_12l_v3.pt
+python -m train.train --arch scratch-small --k 8 \
+    --lexicon lexicon_v3.tsv --alt-prob 0.25 --hard-neg-prob 0.5 \
+    --distill-teacher models/scorer_12l_v3.pt --distill-alpha 0.5 \
+    --out models/scorer_v3.pt
 
-# 5) 端末用アセットを書き出す
-python -m train.export_dict          # assets/dict/lexicon.tsv.gz
-python -m train.build_bigram         # data/bigram.tsv
-python -m train.export_bigram        # assets/dict/bigram.bin
-python -m train.export_onnx_online   # assets/model/scorer.onnx（int8）
+# 5) 端末用アセットを書き出す（v3 は 1 コマンドにまとめてある）
+bash scripts/export_v3_assets.sh
 ```
+
+> 英語候補機能（JMdict 由来）は品質上の理由で無効です。
+> `train.build_english_lexicon` は実行せず、`english.tsv(.gz)` も生成しません。
 
 ### 3. APK をビルドして入れる
 
@@ -190,7 +207,11 @@ BERT 本体は凍結し、**最後の薄い線形層だけ**を確定のたび�
 
 ## 既知の制約
 
-- 変換精度は実用水準にはまだ遠い（文正解率 53%）。話し言葉・SNS 文体に弱い
+- 変換精度は実用水準にはまだ遠い（文正解率 57%）。話し言葉は大きく改善したが、
+  **再ランクの選択損失がまだ大きい**（N-best 天井 71.4% に対して実力 57.1%）
+- 端末の辞書が 50 万読みになり、初回ロードが約 1.8s（旧 518ms）。APK も 77MB
+- 上限モデル（12 層）は 1 epoch で打ち切っており、蒸留の教師としては未完成。
+  Wikipedia 指標では旧モデルの重み + 新アセット（58.15%）が最良
 - 学習は単語モードの確定時のみ（通常の変換確定では文節境界が取れないため）
 - 端末は arm64-v8a のみ
 
@@ -204,7 +225,10 @@ BERT 本体は凍結し、**最後の薄い線形層だけ**を確定のたび�
 | 対象 | ライセンス |
 |---|---|
 | 本リポジトリのコード | Apache-2.0 |
-| カタカナ語→英単語 辞書（JMdict 由来） | CC BY-SA 4.0 |
-| 学習済みモデル（`bert-base-japanese-char-v3` 由来） | Apache-2.0 |
+| カタカナ語→英単語 辞書（JMdict 由来・既定で無効） | CC BY-SA 4.0 |
+| 学習済みモデル（`bert-base-japanese-char-v3` の語彙を利用） | Apache-2.0 |
 | 辞書（SudachiDict 由来） | Apache-2.0 |
-| 学習コーパス（日本語 Wikipedia） | CC BY-SA 4.0 |
+| 辞書（mecab-ipadic-NEologd 由来） | Apache-2.0（付随する帰属表示は NOTICE 参照） |
+| 学習コーパス（日本語 Wikipedia） | CC BY-SA 3.0 / GFDL |
+| 学習コーパス（mC4 日本語 web テキスト） | ODC-BY 1.0 |
+| 学習コーパス（国会会議録・話し言葉） | 公共データ利用規約 1.0（≒CC BY 4.0）/ MIT（再配布） |

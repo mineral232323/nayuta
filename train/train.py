@@ -15,7 +15,7 @@ import os
 import random
 import sys
 import time
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 import torch
 import torch.nn.functional as F
@@ -33,6 +33,9 @@ from train.scorer import (  # noqa: E402
 MAX_CTX = 64
 MAX_READ = 48
 MAX_WORDS = 24
+# 隣接スパンを跨いだ誤分割候補（hard negative）の最大数。
+# 学習時の候補軸は Collator 側で k + MAX_HARD_NEG に広げる。
+MAX_HARD_NEG = 2
 
 
 def load_lexicon(path: str, topk: int) -> Lexicon:
@@ -71,6 +74,9 @@ class ConvDataset(Dataset):
         k: int,
         alt: Optional[Dict[str, List[str]]] = None,
         alt_prob: float = 0.0,
+        surface_set: Optional[Set[str]] = None,
+        hard_neg: bool = False,
+        hard_neg_prob: float = 0.5,
     ):
         self.path = path
         self.lex = lex
@@ -78,6 +84,10 @@ class ConvDataset(Dataset):
         self.k = k
         self.alt = alt or {}
         self.alt_prob = alt_prob
+        # hard negative に使えるのは候補テーブルに載っている表記だけ
+        self.surface_set = surface_set
+        self.hard_neg = hard_neg
+        self.hard_neg_prob = hard_neg_prob
         self.offsets: List[int] = []
         self._fh = None
         with open(path, "rb") as f:
@@ -118,6 +128,45 @@ class ConvDataset(Dataset):
                 out.append([rd, surf])
         return out
 
+    def _hard_negatives(
+        self,
+        read: str,
+        spans: List[Tuple[int, int, str, str]],
+        wi: int,
+        gold_surf: str,
+        surfaces: List[str],
+    ) -> List[str]:
+        """隣接スパンを跨いだ誤分割候補を負例として返す（指示書 Phase 3-2）。
+
+        同じ開始位置から右へはみ出す読み（s → e_next）と、左へはみ出す読み
+        （s_prev → e）の候補表記を負例として足す。要するに「隣の単語まで
+        食い込んだ別の語」を、このスパンの候補として低く採点することを学ばせる。
+        さらに読みそのもの（かな表記）も足して、未知語の 1 文字かな経路が
+        勝ちやすくなるのを抑える。
+        """
+        s, e = spans[wi][0], spans[wi][1]
+        pool: List[str] = []
+        if wi + 1 < len(spans):
+            pool.extend(
+                c.surface for c in self.lex.candidates(read[s : spans[wi + 1][1]])
+            )
+        if wi > 0:
+            pool.extend(
+                c.surface for c in self.lex.candidates(read[spans[wi - 1][0] : e])
+            )
+        if read[s:e] != gold_surf:
+            pool.append(read[s:e])
+        out: List[str] = []
+        for x in pool:
+            if len(out) >= MAX_HARD_NEG:
+                break
+            if x == gold_surf or x in surfaces or x in out:
+                continue
+            if self.surface_set is not None and x not in self.surface_set:
+                continue
+            out.append(x)
+        return out
+
     def __getitem__(self, idx: int) -> Optional[dict]:
         fh = self._handle()
         fh.seek(self.offsets[idx])
@@ -128,16 +177,23 @@ class ConvDataset(Dataset):
             return None
         ctx: str = rec["ctx"][-MAX_CTX:]
         pos = 0
-        starts, ends, cand_lists, golds = [], [], [], []
+        spans: List[Tuple[int, int, str, str]] = []
         for rd, surf in words:
             s, e = pos, pos + len(rd)
             pos = e
+            spans.append((s, e, rd, surf))
+        starts, ends, cand_lists, golds = [], [], [], []
+        for wi, (s, e, rd, surf) in enumerate(spans):
             cands = self.lex.candidates(rd)
             if len(cands) < 2:
                 continue
             surfaces = [c.surface for c in cands[: self.k]]
             if surf not in surfaces:
                 continue
+            if self.hard_neg and random.random() < self.hard_neg_prob:
+                surfaces = surfaces + self._hard_negatives(
+                    read, spans, wi, surf, surfaces
+                )
             starts.append(s)
             ends.append(e)
             cand_lists.append(surfaces)
@@ -174,7 +230,7 @@ class Collator:
         B = len(batch)
         W = max(len(b["starts"]) for b in batch)
         L = max(3 + len(b["ctx"]) + len(b["read"]) for b in batch)
-        K, S = self.k, 12
+        K, S = self.k + MAX_HARD_NEG, 12
 
         ids = torch.zeros((B, L), dtype=torch.long)
         am = torch.zeros((B, L), dtype=torch.long)
@@ -213,7 +269,7 @@ class Collator:
         }
 
 
-def forward_batch(model, batch, table, device):
+def forward_batch(model, batch, table, device, teacher=None, temp=2.0, alpha=0.5):
     tci, tcm, tlen = table[0], table[1], table[2]
     logits = model(
         batch["input_ids"].to(device),
@@ -235,6 +291,24 @@ def forward_batch(model, batch, table, device):
         reduction="none",
     ).view_as(wmask)
     loss = (loss * wmask).sum() / wmask.sum().clamp(min=1.0)
+    if teacher is not None:
+        # 蒸留: 教師の候補分布に生徒を寄せる（KL、温度で緩める）
+        with torch.no_grad():
+            t_logits = teacher(
+                batch["input_ids"].to(device),
+                batch["attention_mask"].to(device),
+                batch["starts"].to(device),
+                batch["ends"].to(device),
+                batch["cand_index"].to(device),
+                tci,
+                tcm,
+                tlen,
+            ).masked_fill(cmask == 0, -1e4)
+        s_logp = F.log_softmax(logits / temp, dim=-1)
+        t_prob = F.softmax(t_logits / temp, dim=-1)
+        kl = F.kl_div(s_logp, t_prob, reduction="none").sum(-1)
+        kl = (kl * wmask).sum() / wmask.sum().clamp(min=1.0) * (temp * temp)
+        loss = loss + alpha * kl
     with torch.no_grad():
         pred = logits.argmax(-1)
         correct = ((pred == gold).float() * wmask).sum()
@@ -263,8 +337,14 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--data-dir", default="data")
     ap.add_argument("--model", default="tohoku-nlp/bert-base-japanese-char-v3")
-    ap.add_argument("--arch", default="pretrained", choices=["pretrained", "scratch-small"])
+    ap.add_argument(
+        "--arch", default="pretrained",
+        choices=["pretrained", "scratch-small", "scratch-12l", "scratch-6l768"],
+    )
     ap.add_argument("--lexicon", default="lexicon_v2.tsv")
+    ap.add_argument("--train-file", default="", help="未指定なら data-dir/train.jsonl")
+    ap.add_argument("--valid-file", default="", help="未指定なら data-dir/valid.jsonl")
+    ap.add_argument("--alt-file", default="", help="未指定なら data-dir/alt_readings.tsv")
     ap.add_argument("--alt-prob", type=float, default=0.25)
     ap.add_argument("--epochs", type=float, default=2.0)
     ap.add_argument("--batch-size", type=int, default=8)
@@ -276,6 +356,18 @@ def main() -> None:
     ap.add_argument("--workers", type=int, default=8)
     ap.add_argument("--out", default="models/scorer.pt")
     ap.add_argument("--seed", type=int, default=13)
+    # Phase 3-2: 隣接スパン跨ぎの hard negative（0 で無効）
+    ap.add_argument("--hard-neg-prob", type=float, default=0.0)
+    # Phase 4: 蒸留（教師の候補分布へ KL で寄せる）
+    ap.add_argument("--distill-teacher", default="")
+    ap.add_argument("--distill-temp", type=float, default=2.0)
+    ap.add_argument("--distill-alpha", type=float, default=0.5)
+    ap.add_argument("--save-every", type=int, default=0, help="N step ごとに .step を保存")
+    ap.add_argument("--log-every", type=int, default=200)
+    ap.add_argument(
+        "--init-from", default="",
+        help="このチェックポイントの重みから学習を始める（追加学習・再開用。optimizer は新規）",
+    )
     args = ap.parse_args()
 
     random.seed(args.seed)
@@ -283,6 +375,9 @@ def main() -> None:
     torch.backends.cuda.matmul.allow_tf32 = True
     torch.backends.cudnn.allow_tf32 = True
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if device.type == "cuda":
+        torch.cuda.manual_seed_all(args.seed)
+        torch.set_float32_matmul_precision("high")
 
     lex = load_lexicon(os.path.join(args.data_dir, args.lexicon), args.k)
     print(f"lexicon: {len(lex.entries)} readings", flush=True)
@@ -308,24 +403,72 @@ def main() -> None:
     encoder = build_encoder(args.arch, vocab.size, args.model)
     hidden = encoder.config.hidden_size
     model = SpanScorer(encoder, hidden).to(device)
-    print(f"encoder: {args.model} hidden={hidden}", flush=True)
+    n_params = sum(p.numel() for p in model.parameters())
+    print(
+        f"encoder: {args.arch} hidden={hidden} params={n_params / 1e6:.1f}M",
+        flush=True,
+    )
 
-    alt = load_alt_readings(os.path.join(args.data_dir, "alt_readings.tsv"))
-    print(f"alt readings: {len(alt)} surfaces", flush=True)
+    teacher = None
+    if args.init_from:
+        ick = torch.load(args.init_from, map_location="cpu", weights_only=False)
+        if ick.get("surfaces") != surfaces:
+            # 重みだけを引き継ぐので候補表が違っても問題ない（辞書を差し替えた
+            # ときの追加学習に使える）。蒸留の teacher とは違って index 参照は無い。
+            print(
+                "warn: --init-from の候補表が今の辞書と異なります（重みのみ引き継ぎ）",
+                flush=True,
+            )
+        model.load_state_dict(ick["model"])
+        print(f"init from {args.init_from}", flush=True)
+    if args.distill_teacher:
+        tck = torch.load(args.distill_teacher, map_location="cpu", weights_only=False)
+        if tck.get("surfaces") != surfaces:
+            raise SystemExit(
+                "teacher と lexicon の候補表記が一致しません（同じ辞書で学習してください）"
+            )
+        t_enc = build_encoder(
+            tck.get("arch", "scratch-small"),
+            tck.get("vocab_size", vocab.size),
+            tck.get("model_name", ""),
+        )
+        teacher = SpanScorer(t_enc, tck["hidden"]).to(device)
+        teacher.load_state_dict(tck["model"])
+        teacher.eval()
+        for p in teacher.parameters():
+            p.requires_grad_(False)
+        print(
+            f"teacher: {args.distill_teacher} hidden={tck['hidden']} "
+            f"alpha={args.distill_alpha} T={args.distill_temp}",
+            flush=True,
+        )
+
+    alt_path = args.alt_file or os.path.join(args.data_dir, "alt_readings.tsv")
+    alt = load_alt_readings(alt_path)
+    print(f"alt readings: {len(alt)} surfaces ({alt_path})", flush=True)
+
+    train_path = args.train_file or os.path.join(args.data_dir, "train.jsonl")
+    valid_path = args.valid_file or os.path.join(args.data_dir, "valid.jsonl")
+    surface_set = set(surface_id)
     train_ds = ConvDataset(
-        os.path.join(args.data_dir, "train.jsonl"),
+        train_path,
         lex,
         vocab,
         args.k,
         alt=alt,
         alt_prob=args.alt_prob,
+        surface_set=surface_set,
+        hard_neg=args.hard_neg_prob > 0,
+        hard_neg_prob=args.hard_neg_prob,
     )
-    valid_ds = ConvDataset(
-        os.path.join(args.data_dir, "valid.jsonl"), lex, vocab, args.k
-    )
+    valid_ds = ConvDataset(valid_path, lex, vocab, args.k)
     if args.limit:
         train_ds.offsets = train_ds.offsets[: args.limit]
-    print(f"train: {len(train_ds)} valid: {len(valid_ds)}", flush=True)
+    print(
+        f"train: {len(train_ds)} ({train_path}) "
+        f"valid: {len(valid_ds)} ({valid_path}) hard_neg={args.hard_neg_prob}",
+        flush=True,
+    )
 
     coll = Collator(vocab, surface_id, args.k)
     train_loader = DataLoader(
@@ -335,8 +478,8 @@ def main() -> None:
         num_workers=args.workers,
         collate_fn=coll,
         drop_last=True,
-        persistent_workers=True,
-        prefetch_factor=8,
+        persistent_workers=args.workers > 0,
+        prefetch_factor=8 if args.workers > 0 else None,
     )
     valid_loader = DataLoader(
         valid_ds,
@@ -359,45 +502,15 @@ def main() -> None:
         weight_decay=0.01,
         betas=(0.9, 0.98),
     )
-    total_steps = int(len(train_loader) * args.epochs) // args.grad_accum
+    total_steps = max(1, int(len(train_loader) * args.epochs) // args.grad_accum)
     warmup = max(1, int(total_steps * 0.05))
+    decay_steps = max(1, total_steps - warmup)
     sched = torch.optim.lr_scheduler.LambdaLR(
         opt,
-        lambda s: min((s + 1) / warmup, max(0.0, (total_steps - s) / (total_steps - warmup))),
+        lambda s: min((s + 1) / warmup, max(0.0, (total_steps - s) / decay_steps)),
     )
 
-    os.makedirs(os.path.dirname(args.out), exist_ok=True)
-    step = 0
-    t0 = time.time()
-    for epoch in range(math.ceil(args.epochs)):
-        model.train()
-        running = 0.0
-        nb = 0
-        for batch in train_loader:
-            if batch is None:
-                continue
-            with torch.autocast("cuda", dtype=torch.bfloat16):
-                loss, _, _ = forward_batch(model, batch, table, device)
-            (loss / args.grad_accum).backward()
-            running += loss.item()
-            nb += 1
-            if nb % args.grad_accum == 0:
-                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-                opt.step()
-                sched.step()
-                opt.zero_grad(set_to_none=True)
-                step += 1
-            if nb % 200 == 0:
-                el = time.time() - t0
-                print(
-                    f"ep{epoch} {nb}/{len(train_loader)} step={step} "
-                    f"loss={running / 200:.4f} lr={sched.get_last_lr()[0]:.2e} "
-                    f"{el:.0f}s",
-                    flush=True,
-                )
-                running = 0.0
-        vl, va = evaluate(model, valid_loader, table, device)
-        print(f"[epoch {epoch}] valid_loss={vl:.4f} cand_acc={va:.4f}", flush=True)
+    def save_checkpoint(path: str) -> None:
         torch.save(
             {
                 "model": model.state_dict(),
@@ -409,8 +522,59 @@ def main() -> None:
                 "k": args.k,
                 "vocab_size": vocab.size,
             },
-            args.out,
+            path,
         )
+
+    os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
+    step = 0
+    t0 = time.time()
+    samples_seen = 0
+    for epoch in range(math.ceil(args.epochs)):
+        model.train()
+        running = 0.0
+        nb = 0
+        ep_t0 = time.time()
+        for batch in train_loader:
+            if batch is None:
+                continue
+            with torch.autocast(
+                "cuda", dtype=torch.bfloat16, enabled=(device.type == "cuda")
+            ):
+                loss, _, nwords = forward_batch(
+                    model, batch, table, device,
+                    teacher, args.distill_temp, args.distill_alpha,
+                )
+            (loss / args.grad_accum).backward()
+            running += loss.item()
+            nb += 1
+            samples_seen += int(batch["wmask"].shape[0])
+            if nb % args.grad_accum == 0:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                opt.step()
+                sched.step()
+                opt.zero_grad(set_to_none=True)
+                step += 1
+            if nb % args.log_every == 0:
+                el = time.time() - t0
+                sps = samples_seen / max(el, 1e-6)
+                print(
+                    f"ep{epoch} {nb}/{len(train_loader)} step={step} "
+                    f"loss={running / args.log_every:.4f} "
+                    f"lr={sched.get_last_lr()[0]:.2e} "
+                    f"{el:.0f}s {sps:.0f} samples/s",
+                    flush=True,
+                )
+                running = 0.0
+            if args.save_every and step and step % args.save_every == 0:
+                save_checkpoint(args.out + ".step")
+        vl, va = evaluate(model, valid_loader, table, device)
+        ep_el = time.time() - ep_t0
+        print(
+            f"[epoch {epoch}] valid_loss={vl:.4f} cand_acc={va:.4f} "
+            f"epoch_time={ep_el:.0f}s",
+            flush=True,
+        )
+        save_checkpoint(args.out)
         print(f"saved {args.out}", flush=True)
 
 
