@@ -1,12 +1,14 @@
 package com.nayuta.ime
 
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.view.Gravity
 import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
@@ -30,6 +32,36 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var userDictCount: TextView
     private lateinit var onlineStatus: TextView
     private val density get() = resources.displayMetrics.density
+
+    /** 端末内学習データ（重み w）をユーザー指定の場所へ JSON で書き出す。 */
+    private val exportLearnerLauncher =
+        registerForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+            if (uri == null) return@registerForActivityResult
+            val l = com.nayuta.ime.converter.bert.OnlineLearner.get(applicationContext, 384)
+            val sb = StringBuilder(l.w.size * 10 + 128)
+            sb.append("{\"type\":\"nayuta-online-learner\",\"version\":1")
+                .append(",\"hidden\":").append(l.hidden)
+                .append(",\"updateCount\":").append(l.updateCount)
+                .append(",\"w\":[")
+            for (i in l.w.indices) {
+                if (i > 0) sb.append(',')
+                sb.append(l.w[i])
+            }
+            sb.append("]}")
+            writeText(uri, sb.toString(), "学習データをエクスポートしました（更新 ${l.updateCount} 回）")
+        }
+
+    /** ユーザー辞書をユーザー指定の場所へ TSV（reading\tsurface）で書き出す。 */
+    private val exportDictLauncher =
+        registerForActivityResult(ActivityResultContracts.CreateDocument("text/tab-separated-values")) { uri ->
+            if (uri == null) return@registerForActivityResult
+            val ud = UserDictionary.get(applicationContext)
+            val sb = StringBuilder()
+            for ((reading, surface) in ud.allEntries()) {
+                sb.append(reading).append('\t').append(surface).append('\n')
+            }
+            writeText(uri, sb.toString(), "ユーザー辞書をエクスポートしました（${ud.size} 語）")
+        }
 
     private fun dp(v: Int): Int = (v * density).toInt()
 
@@ -139,6 +171,21 @@ class SettingsActivity : AppCompatActivity() {
                         ).apply { topMargin = dp(8); bottomMargin = dp(8) }
                     },
                 )
+                addView(divider())
+                addView(
+                    MaterialButton(
+                        this@SettingsActivity,
+                        null,
+                        com.google.android.material.R.attr.materialButtonOutlinedStyle,
+                    ).apply {
+                        text = "学習データをエクスポート"
+                        setOnClickListener { exportLearnerLauncher.launch("nayuta-online.json") }
+                        layoutParams = LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.WRAP_CONTENT,
+                        ).apply { topMargin = dp(8); bottomMargin = dp(8) }
+                    },
+                )
             },
         )
 
@@ -159,6 +206,21 @@ class SettingsActivity : AppCompatActivity() {
                             UserDictionary.get(applicationContext).clear()
                             refreshUserDict()
                         }
+                        layoutParams = LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.WRAP_CONTENT,
+                        ).apply { topMargin = dp(8); bottomMargin = dp(8) }
+                    },
+                )
+                addView(divider())
+                addView(
+                    MaterialButton(
+                        this@SettingsActivity,
+                        null,
+                        com.google.android.material.R.attr.materialButtonOutlinedStyle,
+                    ).apply {
+                        text = "ユーザー辞書をエクスポート"
+                        setOnClickListener { exportDictLauncher.launch("nayuta-user-dict.tsv") }
                         layoutParams = LinearLayout.LayoutParams(
                             ViewGroup.LayoutParams.MATCH_PARENT,
                             ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -220,6 +282,21 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun refreshUserDict() {
         userDictCount.text = "登録数: ${UserDictionary.get(applicationContext).size} 語"
+    }
+
+    private fun writeText(uri: Uri, text: String, okMessage: String) {
+        try {
+            contentResolver.openOutputStream(uri)?.use { os ->
+                os.write(text.toByteArray(Charsets.UTF_8))
+            } ?: throw java.io.IOException("出力ストリームを開けませんでした")
+            android.widget.Toast.makeText(this, okMessage, android.widget.Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            android.widget.Toast.makeText(
+                this,
+                "エクスポートに失敗しました: ${e.message}",
+                android.widget.Toast.LENGTH_LONG,
+            ).show()
+        }
     }
 
     // ------------------------------------------------------------------

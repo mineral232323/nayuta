@@ -1,0 +1,60 @@
+name: "Nayuta build environment"
+description: "JDK21 + Android SDK + 学習済みアセットを準備して Gradle ビルドする"
+
+inputs:
+  tasks:
+    description: "実行する Gradle タスク"
+    required: false
+    default: "assembleDebug"
+  self-tag:
+    description: "アセット取得で自分自身のタグを除外するためのタグ名"
+    required: false
+    default: ""
+  github-token:
+    description: "gh CLI（リリース一覧の取得）用トークン。composite 内では secrets を直接参照できないため呼び出し元から渡す"
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up JDK 21
+      uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: "21"
+
+    # build.sh は GRADLE_USER_HOME=.cache/gradle を使うので、そこをキャッシュする
+    - name: Gradle dependency cache
+      uses: actions/cache@v4
+      with:
+        path: |
+          .cache/gradle
+          android/.gradle
+        key: ${{ runner.os }}-gradle-${{ hashFiles('android/**/*.gradle.kts', 'android/**/*.toml', 'android/gradle/wrapper/gradle-wrapper.properties') }}
+        restore-keys: |
+          ${{ runner.os }}-gradle-
+
+    - name: Android SDK (cmdline-tools / android-35 / build-tools 35)
+      shell: bash
+      run: bash scripts/android/setup_sdk.sh
+
+    - name: Fetch model/dict assets from the latest release
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        SELF_TAG: ${{ inputs.self-tag }}
+      run: |
+        # gh の --jq は --arg を解釈できないため、自己タグの除外は grep で行う
+        PREV_TAG="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 10 \
+          --json tagName --jq '.[].tagName' \
+          | grep -v -x -F "$SELF_TAG" | head -1)"
+        if [[ -z "$PREV_TAG" ]]; then
+          echo "error: 取得元のリリースがありません" >&2
+          exit 1
+        fi
+        echo "assets from release: $PREV_TAG"
+        NAYUTA_RELEASE_TAG="$PREV_TAG" bash scripts/android/fetch_assets.sh
+
+    - name: Gradle build
+      shell: bash
+      run: bash scripts/android/build.sh ${{ inputs.tasks }}
