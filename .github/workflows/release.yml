@@ -61,8 +61,8 @@ jobs:
             VER="$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' android/app/build.gradle.kts)"
             TAG_NAME="v${VER}-pre"
           fi
-          # fetch_assets.sh の命名規則に合わせる（v0.2.6-pre → nayuta-0.2.6-debug.apk）
-          APK_OUT="nayuta-${TAG_NAME#v}"
+          # fetch_assets.sh の命名規則に合わせる（v0.2.6-pre → nayuta-v0.2.6-debug.apk。v は残す）
+          APK_OUT="nayuta-${TAG_NAME}"
           APK_OUT="${APK_OUT%-pre}-debug.apk"
           cp android/app/build/outputs/apk/debug/app-debug.apk "$APK_OUT"
           if gh release view "$TAG_NAME" >/dev/null 2>&1; then

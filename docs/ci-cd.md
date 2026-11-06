@@ -27,7 +27,7 @@ GitHub Actions で「PR のビルド検証」と「pre-release への APK 自動
 ## リリースの中身
 
 - pre-release のタグ/名前: `v0.2.5-pre` / 「Nayuta v0.2.5」のような `v<versionName>-pre` 形式。すべて pre-release
-- 添付ファイル: `nayuta-<version>-debug.apk`（例: `nayuta-0.2.5-debug.apk`）。この名前は
+- 添付ファイル: `nayuta-v<version>-debug.apk`（例: `nayuta-v0.2.5-debug.apk`）。この名前は
   `scripts/android/fetch_assets.sh` が吸い上げる APK 名と一致させている
 - 署名: 現状は debug 署名の APK のまま配布する（keystore の secret は不要）。
   後で署名リリースに切り替える場合は `build.gradle.kts` に signingConfig を追加し、
@@ -39,7 +39,7 @@ GitHub Actions で「PR のビルド検証」と「pre-release への APK 自動
 
 1. `android/app/build.gradle.kts` の `versionName`（例: `0.2.5` → `0.2.6`）と `versionCode`（例: `6` → `7`）を上げる
 2. master にマージする（PR 経由でも直接 push でもよい）
-3. master push で `release.yml` が走り、`v0.2.6-pre` の pre-release が自動作成され `nayuta-0.2.6-debug.apk` が添付される
+3. master push で `release.yml` が走り、`v0.2.6-pre` の pre-release が自動作成され `nayuta-v0.2.6-debug.apk` が添付される
 
 ## ローカル手順との対応
 

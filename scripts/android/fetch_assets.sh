@@ -25,21 +25,33 @@ if [[ -z "$SLUG" ]]; then
     exit 1
 fi
 
-APK_NAME="nayuta-${TAG#v}-debug.apk"
-# タグ名と APK 名が一致しないリリース（v0.2.5-pre → nayuta-v0.2.5-debug.apk）を吸収
-if [[ "$TAG" == *-pre ]]; then
-    APK_NAME="nayuta-${TAG%-pre}-debug.apk"
-fi
-URL="https://github.com/$SLUG/releases/download/$TAG/$APK_NAME"
+# APK 名の候補（新形式を優先し、旧形式 v付き も試す）
+#   v0.2.5-pre → nayuta-0.2.5-debug.apk（新） / nayuta-v0.2.5-debug.apk（旧）
+BASE_NEW="${TAG#v}"; BASE_NEW="${BASE_NEW%-pre}"
+BASE_OLD="${TAG%-pre}"
 
 mkdir -p "$CACHE_DIR"
-APK="$CACHE_DIR/$APK_NAME"
-if [[ ! -f "$APK" ]]; then
+APK_NAME=""
+for cand in "nayuta-${BASE_NEW}-debug.apk" "nayuta-${BASE_OLD}-debug.apk"; do
+    APK="$CACHE_DIR/$cand"
+    if [[ -f "$APK" ]]; then
+        APK_NAME="$cand"
+        echo "==> APK は取得済み: $APK"
+        break
+    fi
+    URL="https://github.com/$SLUG/releases/download/$TAG/$cand"
     echo "==> APK を取得中: $URL"
-    curl -sS -L --fail -o "$APK" "$URL"
-else
-    echo "==> APK は取得済み: $APK"
+    if curl -sS -L --fail -o "$APK" "$URL"; then
+        APK_NAME="$cand"
+        break
+    fi
+    rm -f "$APK"
+done
+if [[ -z "$APK_NAME" ]]; then
+    echo "error: タグ $TAG の APK が見つかりません（新旧両形式を試しました）" >&2
+    exit 1
 fi
+APK="$CACHE_DIR/$APK_NAME"
 
 echo "==> assets/ を展開中..."
 tmp_dir="$(mktemp -d)"

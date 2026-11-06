@@ -139,7 +139,7 @@ APK は約 54MB（ONNX Runtime のネイティブライブラリが大半）。
 ### 4. リリース（CI/CD が自動で実行）
 
 **PR を master にマージするだけで**、`v<versionName>-pre`（現バージョンなら `v0.2.5-pre`）の pre-release に
-`nayuta-<version>-debug.apk` が自動で添付（または上書き）される。
+`nayuta-v<version>-debug.apk` が自動で添付（または上書き）される。
 `v*` タグの push や、Actions 画面から「Release」の手動実行でも同じことができる。
 モデル・辞書のアセットは「自分を除く最新リリース」から自動取得する（`scripts/android/fetch_assets.sh`）。
 PR と master への push では `.github/workflows/ci.yml` が `assembleDebug` + `lintDebug` を実行し、
