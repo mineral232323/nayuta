@@ -1,3 +1,5 @@
+import java.io.File
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -26,6 +28,22 @@ android {
         }
     }
 
+    signingConfigs {
+        // CI の Secrets（ANDROID_KEYSTORE_BASE64 等）から環境変数経由で受け取る。
+        // 環境変数が無い / keystore ファイルが無い場合は debug 署名にフォールバックし、
+        // ローカルビルドや secrets 未設定の CI でも失敗しないようにする。
+        val keystorePath = System.getenv("NAYUTA_KEYSTORE_PATH")
+        val keystorePassword = System.getenv("NAYUTA_KEYSTORE_PASSWORD")
+        if (keystorePath != null && File(keystorePath).isFile) {
+            create("release") {
+                storeFile = File(keystorePath)
+                storePassword = keystorePassword
+                keyAlias = System.getenv("NAYUTA_KEY_ALIAS")
+                keyPassword = System.getenv("NAYUTA_KEY_PASSWORD") ?: keystorePassword
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
@@ -33,6 +51,8 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
+            signingConfig = signingConfigs.findByName("release")
+                ?: signingConfigs.getByName("debug")
         }
     }
 

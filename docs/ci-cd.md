@@ -27,19 +27,57 @@ GitHub Actions で「PR のビルド検証」と「pre-release への APK 自動
 ## リリースの中身
 
 - pre-release のタグ/名前: `v0.2.5-pre` / 「Nayuta v0.2.5」のような `v<versionName>-pre` 形式。すべて pre-release
-- 添付ファイル: `nayuta-v<version>-debug.apk`（例: `nayuta-v0.2.5-debug.apk`）。この名前は
-  `scripts/android/fetch_assets.sh` が吸い上げる APK 名と一致させている
-- 署名: 現状は debug 署名の APK のまま配布する（keystore の secret は不要）。
-  後で署名リリースに切り替える場合は `build.gradle.kts` に signingConfig を追加し、
-  keystore を Secrets に登録して workflow に渡す
+- 添付ファイル: `nayuta-v<version>-release.apk`（例: `nayuta-v0.2.6-release.apk`）。リリース用の
+  署名 Secrets が未設定の場合は `nayuta-v<version>-debug.apk`（debug 署名）にフォールバックする。
+  これらの名前は `scripts/android/fetch_assets.sh` が吸い上げる APK 名と一致させている
+- 署名: 下記「リリース署名（keystore）」の Secrets が設定されていれば release ビルドを正規の鍵で署名する。
+  未設定の場合は debug 署名の APK を配布する（keystore の secret は不要）
 - モデル・辞書（`assets/`）はリポジトリに含めない。「自分を除く最新リリース」の APK から
   `fetch_assets.sh` で取得する（`self-tag` input で自身のタグを除外し、自己参照を回避）
+
+## リリース署名（keystore）
+
+リリース APK は正規の鍵で署名する。鍵は GitHub Secrets 経由でのみ CI に渡り、リポジトリには置かない。
+
+### 1. keystore を作る（1 回だけ・ローカルで実行）
+
+```bash
+keytool -genkeypair -v \
+  -keystore nayuta-release.jks -alias nayuta -keyalg RSA -keysize 4096 -validity 10000
+```
+
+- 途中で聞かれるパスワード（keystore と key は同じでよい）と名前を入力する
+- **`nayuta-release.jks` は絶対にコミットしない・紛失しないこと**。紛失すると同じ鍵での
+  アップデート配布が二度とできなくなる（別アプリとして再インストールになる）
+- バックアップは安全な場所（パスワードマネージャ等）に保管する
+
+### 2. GitHub Secrets に登録する
+
+リポジトリの Settings → Secrets and variables → Actions に以下を登録する
+（base64 は `base64 -w0 nayuta-release.jks` で作れる）:
+
+| Secret 名 | 内容 |
+|---|---|
+| `ANDROID_KEYSTORE_BASE64` | `nayuta-release.jks` を base64 エンコードした文字列 |
+| `ANDROID_KEYSTORE_PASSWORD` | keystore のパスワード |
+| `ANDROID_KEY_ALIAS` | エイリアス（上の例なら `nayuta`） |
+| `ANDROID_KEY_PASSWORD` | key のパスワード（keystore と同じなら同じ値） |
+
+### 3. 動作
+
+- `release.yml` が Secrets を復元して環境変数（`NAYUTA_KEYSTORE_PATH` 等）経由で Gradle に渡し、
+  `assembleRelease` を実行する。`build.gradle.kts` の `signingConfigs.release` がこれらを読む
+- 署名済み APK は `apksigner verify --print-certs` で検証してからリリースに添付される
+- Secrets が未設定の場合は自動的に debug 署名にフォールバックする（CI が赤くならない）
+- ローカルで署名付き release ビルドをしたい場合は環境変数を設定して
+  `bash scripts/android/build.sh assembleRelease` を実行する
 
 ## バージョンの上げ方
 
 1. `android/app/build.gradle.kts` の `versionName`（例: `0.2.5` → `0.2.6`）と `versionCode`（例: `6` → `7`）を上げる
 2. master にマージする（PR 経由でも直接 push でもよい）
-3. master push で `release.yml` が走り、`v0.2.6-pre` の pre-release が自動作成され `nayuta-v0.2.6-debug.apk` が添付される
+3. master push で `release.yml` が走り、`v0.2.6-pre` の pre-release が自動作成され
+   `nayuta-v0.2.6-release.apk`（署名 Secrets 未設定なら `nayuta-v0.2.6-debug.apk`）が添付される
 
 ## ローカル手順との対応
 

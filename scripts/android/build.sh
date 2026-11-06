@@ -69,4 +69,9 @@ fi
 cd "$ANDROID_DIR"
 ./gradlew "$@"
 echo
-echo "APK: $ANDROID_DIR/app/build/outputs/apk/debug/app-debug.apk"
+for variant in debug release; do
+    apk="$ANDROID_DIR/app/build/outputs/apk/$variant/app-$variant.apk"
+    if [[ -f "$apk" ]]; then
+        echo "APK: $apk"
+    fi
+done

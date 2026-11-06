@@ -5,7 +5,9 @@ name: Release
 #   既存なら APK を上書き（--clobber）する
 # - v* タグ push: そのタグ名で pre-release を作成する
 # - 手動実行: ref / tag を指定可（tag 未指定時は master とみなして自動採番）
-# ビルドした debug APK を nayuta-<version>-debug.apk として添付する。
+# 署名付き release APK（nayuta-<version>-release.apk）を添付する。
+# 署名用 Secrets（ANDROID_KEYSTORE_BASE64 / ANDROID_KEYSTORE_PASSWORD / ANDROID_KEY_ALIAS /
+# ANDROID_KEY_PASSWORD）が未設定の場合は debug 署名の APK（nayuta-<version>-debug.apk）にフォールバックする。
 # assets（モデル・辞書）は「自分を除く最新リリース」から取得する。
 
 on:
@@ -45,9 +47,31 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.ref }}
 
-      - name: Build environment + assembleDebug
+      # 署名用 keystore を Secrets から復元する。未設定なら何もせず debug 署名にフォールバック。
+      # 環境変数は build.gradle.kts の signingConfigs が読む（NAYUTA_KEYSTORE_PATH 等）。
+      - name: Decode signing keystore
+        id: signing
+        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          KEYSTORE_PATH="$RUNNER_TEMP/nayuta-release.jks"
+          printf '%s' "$KEYSTORE_B64" | base64 -d > "$KEYSTORE_PATH"
+          {
+            echo "NAYUTA_KEYSTORE_PATH=$KEYSTORE_PATH"
+            echo "NAYUTA_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD"
+            echo "NAYUTA_KEY_ALIAS=$KEY_ALIAS"
+            echo "NAYUTA_KEY_PASSWORD=$KEY_PASSWORD"
+          } >> "$GITHUB_ENV"
+          echo "tasks=assembleRelease" >> "$GITHUB_OUTPUT"
+
+      - name: Build environment + assemble
         uses: ./.github/actions/setup-env
         with:
+          tasks: ${{ steps.signing.outputs.tasks || 'assembleDebug' }}
           self-tag: ${{ inputs.tag || github.ref_name }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -61,10 +85,24 @@ jobs:
             VER="$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' android/app/build.gradle.kts)"
             TAG_NAME="v${VER}-pre"
           fi
-          # fetch_assets.sh の命名規則に合わせる（v0.2.6-pre → nayuta-v0.2.6-debug.apk。v は残す）
+          # fetch_assets.sh の命名規則に合わせる（v0.2.6-pre → nayuta-v0.2.6-release.apk。v は残す）
+          if [[ -n "${{ steps.signing.outputs.tasks }}" ]]; then
+            APK_SRC="android/app/build/outputs/apk/release/app-release.apk"
+            SUFFIX="release"
+          else
+            APK_SRC="android/app/build/outputs/apk/debug/app-debug.apk"
+            SUFFIX="debug"
+            echo "warn: 署名用 Secrets が未設定のため debug 署名でビルドします" >&2
+          fi
           APK_OUT="nayuta-${TAG_NAME}"
-          APK_OUT="${APK_OUT%-pre}-debug.apk"
-          cp android/app/build/outputs/apk/debug/app-debug.apk "$APK_OUT"
+          APK_OUT="${APK_OUT%-pre}-${SUFFIX}.apk"
+          cp "$APK_SRC" "$APK_OUT"
+          if [[ "$SUFFIX" == release ]]; then
+            APKSIGNER="$(ls .android-sdk/build-tools/*/apksigner 2>/dev/null | sort -V | tail -1)"
+            if [[ -n "$APKSIGNER" ]]; then
+              "$APKSIGNER" verify --print-certs "$APK_OUT"
+            fi
+          fi
           if gh release view "$TAG_NAME" >/dev/null 2>&1; then
             gh release upload "$TAG_NAME" "$APK_OUT" --clobber
           else

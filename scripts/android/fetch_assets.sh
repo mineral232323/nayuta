@@ -26,13 +26,15 @@ if [[ -z "$SLUG" ]]; then
 fi
 
 # APK 名の候補（新形式を優先し、旧形式 v付き も試す）
-#   v0.2.5-pre → nayuta-0.2.5-debug.apk（新） / nayuta-v0.2.5-debug.apk（旧）
+#   v0.2.5-pre → nayuta-0.2.5-release.apk（新・署名付き） / nayuta-v0.2.5-release.apk
+#              → nayuta-0.2.5-debug.apk / nayuta-v0.2.5-debug.apk（旧・debug 署名）
 BASE_NEW="${TAG#v}"; BASE_NEW="${BASE_NEW%-pre}"
 BASE_OLD="${TAG%-pre}"
 
 mkdir -p "$CACHE_DIR"
 APK_NAME=""
-for cand in "nayuta-${BASE_NEW}-debug.apk" "nayuta-${BASE_OLD}-debug.apk"; do
+for cand in "nayuta-${BASE_NEW}-release.apk" "nayuta-${BASE_OLD}-release.apk" \
+            "nayuta-${BASE_NEW}-debug.apk" "nayuta-${BASE_OLD}-debug.apk"; do
     APK="$CACHE_DIR/$cand"
     if [[ -f "$APK" ]]; then
         APK_NAME="$cand"
@@ -48,7 +50,7 @@ for cand in "nayuta-${BASE_NEW}-debug.apk" "nayuta-${BASE_OLD}-debug.apk"; do
     rm -f "$APK"
 done
 if [[ -z "$APK_NAME" ]]; then
-    echo "error: タグ $TAG の APK が見つかりません（新旧両形式を試しました）" >&2
+    echo "error: タグ $TAG の APK が見つかりません（release / debug 両形式を試しました）" >&2
     exit 1
 fi
 APK="$CACHE_DIR/$APK_NAME"
