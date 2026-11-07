@@ -37,6 +37,7 @@ def main() -> None:
     ap.add_argument("--out", default="logs/rerank_nbest.jsonl")
     ap.add_argument("--limit", type=int, default=20000, help="書き出す文数")
     ap.add_argument("--max-scan", type=int, default=0, help="走査する文数の上限（0=無制限）")
+    ap.add_argument("--skip-lines", type=int, default=0, help="先頭から読み飛ばす行数（並列生成用）")
     ap.add_argument("--beam", type=int, default=16)
     ap.add_argument("--want", type=int, default=16)
     ap.add_argument("--delta", type=float, default=1.0)
@@ -58,7 +59,9 @@ def main() -> None:
     written = scanned = skipped_gold = skipped_hard = 0
     head_hard = 0
     with open(args.train, encoding="utf-8") as f, open(args.out, "w", encoding="utf-8") as out:
-        for line in f:
+        for line_no, line in enumerate(f):
+            if line_no < args.skip_lines:
+                continue
             if written >= args.limit:
                 break
             scanned += 1
