@@ -11,7 +11,7 @@ adb logcat -s NayutaMem
 adb shell dumpsys meminfo com.nayuta.ime
 ```
 
-## コンポーネント別（新アセット: new500k 辞書 + 20万語 bigram）
+## コンポーネント別（辞書パック化 **前**: new500k 辞書 + 20万語 bigram）
 
 | ステージ | Java ヒープ | ネイティブ | 差分 |
 |---|---|---|---|
@@ -23,6 +23,24 @@ adb shell dumpsys meminfo com.nayuta.ime
 - 辞書: 500,000 読み / 950,827 エントリを `Array<String>` + `IntArray` で保持（文字列が支配的）
 - bigram: 200,000 語 / 3,447,509 連接。CSR 配列（rights 13.8MB + costs 6.9MB）+ `HashMap<String,Int>` と語文字列
 - BERT: ONNX Runtime のセッション＋int8 モデル（14MB）で約 25MB のネイティブ
+
+## 辞書のパック化（2026-11-07 実施）
+
+`train/export_dict.py` が `assets/dict/lexicon.ndict`（パック済みバイナリ）も書き出し、
+`Dictionary` はそれを **mmap** で読むように変更した（Gradle で `.ndict` を非圧縮同梱）。
+旧 `lexicon.tsv.gz` しか無い場合は TSV から同じレイアウトに詰め直すフォールバックあり。
+
+| 項目 | 変更前 | 変更後 |
+|---|---|---|
+| 辞書ロード時間 | 1804ms | **1ms**（mmap のみ） |
+| 辞書の Java ヒープ | +52MB | **+0MB**（mapped ページ） |
+| Java Heap（PSS） | 100.6MB | **49.6MB** |
+| TOTAL PSS（ベンチ画面） | 240.9MB | **203.1MB** |
+| 初回変換（コールド） | 2323ms | **784ms**（BERT+bigram ロードが支配） |
+| APK | 86.6MB | 86.9MB（ndict 24MB を非圧縮同梱、旧 tsv は削除） |
+
+残っている大きいもの: bigram の Java ヒープ **+35MB**、BERT のネイティブ **+25MB**、
+テスト画面の Graphics 45MB、debug ビルドの Code 32MB。
 
 ## プロセス全体（PSS）
 
@@ -48,8 +66,7 @@ adb shell dumpsys meminfo com.nayuta.ime
 
 ## 重いもの・削減候補
 
-1. **辞書 52MB（Java ヒープ）** — 1.45M 個の `String` が支配的。
-   読み・表記を 1 本の char/byte バッファ + オフセットで持つ、またはネイティブに置くと大きく減る。
+1. ~~**辞書 52MB（Java ヒープ）**~~ → **mmap 化で解消**（2026-11-07）。
 2. **bigram 35MB（Java ヒープ）** — 20万語版。10万語に戻すと約 −17MB。
    mmap/ネイティブ化すれば Java ヒープから外せる（ページ回収も可能）。
 3. **BERT 25MB（ネイティブ）** — ORT セッション + 14MB int8。ORT mobile 版やセッション設定の見直し余地。

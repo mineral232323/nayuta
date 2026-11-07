@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # v3 の学習済みアセットを端末用に書き出す。
 #
-#   辞書   data/lexicon_v3_frozen.tsv          -> assets/dict/lexicon.tsv.gz
+#   辞書   data/lexicon_v3_frozen.tsv          -> assets/dict/lexicon.ndict（mmap 用パック形式）
 #   bigram data/bigram_v3.tsv (+ words)        -> assets/dict/bigram.bin
 #   モデル models/scorer_v3.pt                 -> assets/model/scorer.onnx (int8)
 #

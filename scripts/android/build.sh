@@ -42,14 +42,15 @@ mkdir -p "$GRADLE_USER_HOME"
 # 無ければ学習側のスクリプトで書き出す。
 # ---------------------------------------------------------------------------
 ASSET_DIR="$ANDROID_DIR/app/src/main/assets"
+DICT_ASSET_BIN="$ASSET_DIR/dict/lexicon.ndict"
 DICT_ASSET_GZ="$ASSET_DIR/dict/lexicon.tsv.gz"
 DICT_ASSET_TSV="$ASSET_DIR/dict/lexicon.tsv"
-if [[ ! -f "$DICT_ASSET_GZ" && ! -f "$DICT_ASSET_TSV" ]]; then
+if [[ ! -f "$DICT_ASSET_BIN" && ! -f "$DICT_ASSET_GZ" && ! -f "$DICT_ASSET_TSV" ]]; then
     if [[ -x "$REPO_ROOT/.venv/bin/python" && -f "$REPO_ROOT/data/lexicon.tsv" ]]; then
         echo "==> 辞書アセットが無いので生成します"
         ( cd "$REPO_ROOT" && ./.venv/bin/python -m train.export_dict )
     else
-        echo "error: $ASSET_DIR/dict/lexicon.tsv(.gz) がありません。" >&2
+        echo "error: $ASSET_DIR/dict/lexicon.ndict(.tsv.gz) がありません。" >&2
         echo "  配布 APK から取り出す場合:" >&2
         echo "    bash scripts/android/fetch_assets.sh" >&2
         echo "  学習から作る場合:" >&2

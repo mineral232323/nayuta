@@ -79,6 +79,11 @@ android {
         }
     }
 
+    // 辞書は mmap で読みたいので .ndict だけ APK 内で非圧縮にする
+    androidResources {
+        noCompress += "ndict"
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
