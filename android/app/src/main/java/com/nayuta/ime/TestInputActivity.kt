@@ -1,6 +1,10 @@
 package com.nayuta.ime
 
+import android.app.ActivityManager
+import android.content.Context
 import android.os.Bundle
+import android.os.Debug
+import android.os.Process
 import android.text.InputType
 import android.util.Log
 import android.view.Gravity
@@ -9,6 +13,9 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import com.nayuta.ime.converter.Converters
+import com.nayuta.ime.converter.bert.BertScorer
+import com.nayuta.ime.converter.dict.BigramLM
+import com.nayuta.ime.converter.dict.Dictionary
 
 /**
  * キーボードの動作確認用の入力画面。
@@ -100,6 +107,40 @@ class TestInputActivity : AppCompatActivity() {
                 }
                 Log.d("NayutaBench", "done")
                 runOnUiThread { field.setText(shown.toString()) }
+            }.start()
+        }
+
+        // メモリ内訳の計測用:
+        //   adb shell am start -n com.nayuta.ime/.TestInputActivity --es mem 1
+        if (intent.hasExtra("mem")) {
+            val appContext = applicationContext
+            Thread {
+                fun heapMb(): Long {
+                    val rt = Runtime.getRuntime()
+                    return (rt.totalMemory() - rt.freeMemory()) / (1024 * 1024)
+                }
+                fun nativeMb(): Long = Debug.getNativeHeapAllocatedSize() / (1024 * 1024)
+                fun pssMb(): Long {
+                    val am = appContext.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+                    val info = am.getProcessMemoryInfo(intArrayOf(Process.myPid())).firstOrNull()
+                    return (info?.totalPss ?: 0) / 1024L
+                }
+                fun log(stage: String, extra: String = "") {
+                    System.gc()
+                    Thread.sleep(400)
+                    Log.d(
+                        "NayutaMem",
+                        "$stage java=${heapMb()}MB native=${nativeMb()}MB pss=${pssMb()}MB $extra",
+                    )
+                }
+                log("start")
+                val d = Dictionary.get(appContext)
+                log("dict", "readings=${d.readingCount} entries=${d.entryTotal}")
+                val b = BigramLM.getOrNull(appContext)
+                log("bigram", "words=${b?.words} pairs=${b?.pairs}")
+                val scorer = BertScorer(appContext)
+                log("bert", "hidden=${scorer.hidden}")
+                log("done")
             }.start()
         }
 
