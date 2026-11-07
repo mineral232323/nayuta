@@ -1,5 +1,7 @@
 package com.nayuta.ime
 
+import android.content.pm.ApplicationInfo
+import android.graphics.Typeface
 import android.inputmethodservice.InputMethodService
 import android.os.Build
 import android.os.Handler
@@ -16,6 +18,7 @@ import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.ExtractedTextRequest
 import android.view.inputmethod.InputConnection
 import android.widget.LinearLayout
+import android.widget.TextView
 import com.nayuta.ime.converter.Converter
 import com.nayuta.ime.converter.Converters
 import com.nayuta.ime.converter.dict.UserDictionary
@@ -65,6 +68,12 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
 
     private var keyboardView: FlickKeyboardView? = null
     private var candidateView: CandidateView? = null
+
+    /** デバッグビルドのときだけ、変換に渡した文脈を表示する。 */
+    private val debugBuild: Boolean by lazy {
+        (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
+    }
+    private var debugContextView: TextView? = null
 
     /** 未確定の読み（ひらがな）。 */
     private val reading = StringBuilder()
@@ -178,6 +187,28 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
             v.post { applyBottomInset(v) }
         }
 
+        // デバッグビルド限定: 変換・学習に渡している文脈（直前の確定済みテキスト）を
+        // キーボード上にそのまま表示する。リリースビルドでは追加されない。
+        if (debugBuild) {
+            val dbg = TextView(this).apply {
+                textSize = 10f
+                typeface = Typeface.MONOSPACE
+                setTextColor(0xFFFFEB3B.toInt())
+                setBackgroundColor(0xE6202020.toInt())
+                setPadding(dp(6), dp(2), dp(6), dp(2))
+                maxLines = 3
+                text = "ctx(0) (なし)"
+            }
+            root.addView(
+                dbg,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ),
+            )
+            debugContextView = dbg
+        }
+
         val candidates = CandidateView(this).apply {
             onCandidateSelected = { index, _ -> selectCandidate(index) }
         }
@@ -272,6 +303,7 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
 
     override fun onFinishInput() {
         super.onFinishInput()
+        if (debugBuild) debugContextView?.text = "ctx(0) (なし)"
         resetComposing(finishComposing = true)
     }
 
@@ -362,6 +394,7 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
         val executor = convertExecutor ?: return
         val generation = ++convertGeneration
         val contextBefore = contextBeforeCursor()
+        updateDebugContext(contextBefore, "live")
 
         executor.execute {
             val result = try {
@@ -599,6 +632,7 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
         cancelLiveConversion()
         val gen = ++segGeneration
         val ctx = contextBeforeCursor()
+        updateDebugContext(ctx, "seg")
 
         executor.execute {
             val segs = try {
@@ -738,6 +772,7 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
         val ic = currentInputConnection
         // 確定すると文脈が変わるので、確定前の文脈を控えておく
         val ctx = contextBeforeCursor()
+        updateDebugContext(ctx, "learn")
         val snapshot = segCands.indices.map { i ->
             Triple(
                 segReading.substring(segBounds[i], segBounds[i + 1]),
@@ -863,6 +898,7 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
         val engine = converter ?: return
         val generation = ++convertGeneration
         val contextBefore = contextBeforeCursor()
+        updateDebugContext(contextBefore, "conv")
 
         executor.execute {
             val result = try {
@@ -909,6 +945,19 @@ class NayutaImeService : InputMethodService(), FlickKeyboardView.Listener {
             }
         }
         resetComposing(finishComposing = ic == null)
+    }
+
+    /** デバッグビルドのみ: 変換・学習に渡した文脈を可視化する。 */
+    private fun updateDebugContext(ctx: String, source: String) {
+        if (!debugBuild) return
+        val view = debugContextView ?: return
+        val shown = when {
+            ctx.isEmpty() -> "(なし)"
+            ctx.length >= CONTEXT_MAX_LENGTH -> "…$ctx"
+            else -> ctx
+        }
+        val text = "ctx(${ctx.length}) [$source] $shown"
+        if (view.text.toString() != text) view.text = text
     }
 
     /** 変換対象より前の文脈。COMPSING の読みは文脈から除く。 */
