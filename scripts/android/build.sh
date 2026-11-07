@@ -45,8 +45,21 @@ ASSET_DIR="$ANDROID_DIR/app/src/main/assets"
 DICT_ASSET_BIN="$ASSET_DIR/dict/lexicon.ndict"
 DICT_ASSET_GZ="$ASSET_DIR/dict/lexicon.tsv.gz"
 DICT_ASSET_TSV="$ASSET_DIR/dict/lexicon.tsv"
-if [[ ! -f "$DICT_ASSET_BIN" && ! -f "$DICT_ASSET_GZ" && ! -f "$DICT_ASSET_TSV" ]]; then
-    if [[ -x "$REPO_ROOT/.venv/bin/python" && -f "$REPO_ROOT/data/lexicon.tsv" ]]; then
+if [[ ! -f "$DICT_ASSET_BIN" ]]; then
+    # 旧形式の TSV しか無いとき（= 前回リリースの APK から取り出した場合など）は
+    # ビルド時にパック形式へ変換し、旧 TSV は APK に同梱しない。
+    SRC=""
+    if [[ -f "$DICT_ASSET_GZ" ]]; then SRC="$DICT_ASSET_GZ"; elif [[ -f "$DICT_ASSET_TSV" ]]; then SRC="$DICT_ASSET_TSV"; fi
+    if [[ -n "$SRC" ]]; then
+        PY=python3
+        [[ -x "$REPO_ROOT/.venv/bin/python" ]] && PY="$REPO_ROOT/.venv/bin/python"
+        echo "==> 辞書を $SRC からパック形式 (lexicon.ndict) に変換します"
+        if ( cd "$REPO_ROOT" && "$PY" -m train.pack_dict_from_device --in "$SRC" --out "$DICT_ASSET_BIN" ); then
+            rm -f "$DICT_ASSET_GZ" "$DICT_ASSET_TSV"
+        else
+            echo "warn: ndict への変換に失敗。旧 TSV のままビルドします（初回ロードが遅くなります）" >&2
+        fi
+    elif [[ -x "$REPO_ROOT/.venv/bin/python" && -f "$REPO_ROOT/data/lexicon.tsv" ]]; then
         echo "==> 辞書アセットが無いので生成します"
         ( cd "$REPO_ROOT" && ./.venv/bin/python -m train.export_dict )
     else
