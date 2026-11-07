@@ -515,6 +515,7 @@ def cmd_eval(args: argparse.Namespace, engine: Engine) -> int:
         raise SystemExit(f"評価データが空です: {args.data}")
 
     n_done = n_skip = n_bert = n_beam = 0
+    head_n = head_ok = 0
     n_fixed = n_broken = 0
     edit_sum = gold_len = 0
     lat: List[float] = []
@@ -552,6 +553,11 @@ def cmd_eval(args: argparse.Namespace, engine: Engine) -> int:
                 broken_examples.append(
                     {"read": read, "gold": gold, "pred": pred, "beam": beam_pred}
                 )
+        words = rec.get("words") or []
+        if words:
+            head_gold = words[0][1]
+            head_n += 1
+            head_ok += int(pred.startswith(head_gold))
         ed = edit_distance(pred, gold)
         edit_sum += ed
         gold_len += len(gold)
@@ -589,6 +595,8 @@ def cmd_eval(args: argparse.Namespace, engine: Engine) -> int:
     print(f"文正解率                : {acc:.4f}  ({n_bert}/{n_done})")
     print(f"文正解率 (BERT なし)    : {acc_beam:.4f}  ({n_beam}/{n_done})  探索 1 位")
     print(f"CER (micro)             : {cer:.4f}")
+    if head_n:
+        print(f"文頭語正解率            : {head_ok / head_n:.4f}  ({head_ok}/{head_n})")
     print(f"BERT が直した / 壊した  : {n_fixed} / {n_broken}")
     print(
         f"レイテンシ              : p50={pct(0.50):.1f}ms "
@@ -648,6 +656,7 @@ def cmd_eval(args: argparse.Namespace, engine: Engine) -> int:
                 "sent_acc": acc,
                 "sent_acc_beam_first": acc_beam,
                 "cer_micro": cer,
+                "head_acc": (head_ok / head_n) if head_n else None,
             },
             "latency_ms": {
                 "p50": pct(0.50),

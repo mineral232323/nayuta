@@ -243,6 +243,8 @@ BERT 本体は凍結し、**最後の薄い線形層だけ**を確定のたび�
 - [docs/experiment-lexicon-scale.md](docs/experiment-lexicon-scale.md) — 辞書規模と精度・ロード時間の実験
 - [docs/experiment-bigram-backoff.md](docs/experiment-bigram-backoff.md) — bigram の語彙拡張とバックオフの実験
 - [docs/device-memory.md](docs/device-memory.md) — 実機メモリの内訳（Sumire / Samsung 標準との比較）
+- [docs/eval-head.md](docs/eval-head.md) — 文頭 prior-wrong 評価セットと文頭語正解率
+- [docs/rerank-listwise.md](docs/rerank-listwise.md) — 文頭 hard negative の経路単位再ランク学習
 
 ## 既知の制約
 
