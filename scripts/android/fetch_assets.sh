@@ -143,5 +143,50 @@ if [[ "${NAYUTA_V3_SCORER:-1}" == 1 ]]; then
     fi
 fi
 
+# ---------------------------------------------------------------------------
+# v3 辞書 / bigram overlay（GitHub: Mineral232323/nayuta-assets の v3 リリース）
+#
+# 前回リリースの APK に入っている dict/ は旧世代（22万語辞書 / 10万語 bigram）。
+# v3 の「50万読み辞書（mmap 用 lexicon.ndict）」と「20万語 bigram（bigram.bin）」を
+# 取得して上書きする。sha256 が一致しなければ失敗する。
+#
+#   無効化:   NAYUTA_V3_ASSETS=0
+#   差し替え: NAYUTA_ASSETS_REPO / NAYUTA_ASSETS_TAG
+#             NAYUTA_LEXICON_SHA256 / NAYUTA_BIGRAM_SHA256
+# ---------------------------------------------------------------------------
+if [[ "${NAYUTA_V3_ASSETS:-1}" == 1 ]]; then
+    assets_repo="${NAYUTA_ASSETS_REPO:-Mineral232323/nayuta-assets}"
+    assets_tag="${NAYUTA_ASSETS_TAG:-v3}"
+    assets_base="https://github.com/$assets_repo/releases/download/$assets_tag"
+    mkdir -p "$ASSET_DIR/dict"
+    fetch_v3_asset() {  # name expected_sha
+        local name=$1 sha=$2 url="$assets_base/$1"
+        echo "==> v3 アセットを取得中: $url"
+        if ! fetch_url "$ASSET_DIR/dict/$name" "$url"; then
+            echo "error: v3 アセットの取得に失敗しました: $name" >&2
+            return 1
+        fi
+        local actual
+        actual="$(hash_file "$ASSET_DIR/dict/$name")"
+        if [[ -n "$sha" && "$actual" != "$sha" ]]; then
+            echo "error: $name の sha256 が一致しません" >&2
+            echo "       expected: $sha" >&2
+            echo "       got:      $actual" >&2
+            return 1
+        fi
+        echo "    $name sha256=$actual"
+    }
+    fetch_v3_asset lexicon.ndict "${NAYUTA_LEXICON_SHA256:-1a5225dd22e5cca9be15dceb97a222c3b61818096aec3dcb0a1db4dd50cc96d1}" || exit 1
+    fetch_v3_asset bigram.bin "${NAYUTA_BIGRAM_SHA256:-1daa24e9dd430a54d254226813ad95581f6b951c5a1a6d253472ff5cc40dccc9}" || exit 1
+    # 旧形式の辞書が残っていると APK に二重同梱されるので消す
+    rm -f "$ASSET_DIR/dict/lexicon.tsv" "$ASSET_DIR/dict/lexicon.tsv.gz"
+fi
+
+# APK から展開したアセットは aapt が .gz を解凍した形（english.tsv など）になる。
+# 元の .gz が残っているとリソース重複でビルドが失敗するので、解凍済みがあれば消す。
+if [[ -f "$ASSET_DIR/dict/english.tsv" ]]; then
+    rm -f "$ASSET_DIR/dict/english.tsv.gz"
+fi
+
 echo "==> 展開しました: $ASSET_DIR"
 find "$ASSET_DIR/dict" "$ASSET_DIR/model" -type f -printf '    %P\t%s bytes\n' 2>/dev/null | sort
