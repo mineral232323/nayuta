@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import sys
 from typing import Dict, List, Optional, Sequence, Tuple
@@ -48,6 +49,108 @@ class BigramLM:
         if pi is None or ci is None:
             return None
         return self.table.get((pi, ci))
+
+class BackoffBigramLM:
+    """補間バックオフ付き bigram（`train/build_bigram_backoff.py` の出力用）。
+
+    P(cur|prev) = (c(prev,cur) + alpha * P_uni(cur)) / (c(prev) + alpha)
+
+    * 観測済みの連接は保存済みのカウントから補間コストを作る
+    * 未観測の連接もバックオフ式で返す（None にしない）
+    * 語彙外の語は None（呼び出し側が辞書コストへフォールバック）
+    """
+
+    def __init__(
+        self,
+        pairs_path: str,
+        words_path: str,
+        meta_path: str,
+        alpha: float = 100.0,
+    ):
+        self.word_id: Dict[str, int] = {}
+        self.words: List[str] = []
+        self.counts: List[int] = []
+        with open(words_path, encoding="utf-8") as f:
+            for line in f:
+                i, w, c = line.rstrip("\n").split("\t")
+                self.word_id[w] = int(i)
+                self.words.append(w)
+                self.counts.append(int(c))
+        with open(meta_path, encoding="utf-8") as f:
+            meta = json.load(f)
+        self.total_tokens = max(int(meta["total_tokens"]), 1)
+        self.alpha = float(alpha)
+        self.log_alpha = math.log(self.alpha)
+        self.log_denom = [math.log(c + self.alpha) for c in self.counts]
+        self.log_uni = [
+            math.log(max(c, 1) / self.total_tokens) for c in self.counts
+        ]
+        self.table: Dict[Tuple[int, int], float] = {}
+        with open(pairs_path, encoding="utf-8") as f:
+            for line in f:
+                p, c, n = line.rstrip("\n").split("\t")
+                pi, ci, cnt = int(p), int(c), int(n)
+                prob = (cnt + self.alpha * math.exp(self.log_uni[ci])) / (
+                    self.counts[pi] + self.alpha
+                )
+                self.table[(pi, ci)] = -math.log(prob)
+        print(
+            f"backoff-bigram: words={len(self.words)} pairs={len(self.table)} "
+            f"alpha={self.alpha}",
+            flush=True,
+        )
+
+    def conn(
+        self, prev: Optional[str], cur: str, backoff: float
+    ) -> Optional[float]:
+        if prev is None:
+            return None
+        pi = self.word_id.get(prev)
+        ci = self.word_id.get(cur)
+        if pi is None or ci is None:
+            return None
+        cost = self.table.get((pi, ci))
+        if cost is not None:
+            return cost
+        return self.log_denom[pi] - self.log_alpha - self.log_uni[ci]
+
+
+class HybridBigramLM(BackoffBigramLM):
+    """生成は現行と同じ（観測済み連接のみ、未観測は呼び出し側が unigram+δ）、
+    再ランクだけ補間バックオフを使うハイブリッド。
+
+    `beam_search_bigram` は第3引数に delta(>0)、`rank_paths` は 0.0 を渡すので、
+    それをモード判定に使う（実験用）。
+    """
+
+    def __init__(
+        self,
+        pairs_path: str,
+        words_path: str,
+        meta_path: str,
+        alpha: float = 100.0,
+    ):
+        super().__init__(pairs_path, words_path, meta_path, alpha)
+        self.ml_table: Dict[Tuple[int, int], float] = {}
+        with open(pairs_path, encoding="utf-8") as f:
+            for line in f:
+                p, c, n = line.rstrip("\n").split("\t")
+                pi, ci, cnt = int(p), int(c), int(n)
+                self.ml_table[(pi, ci)] = -math.log(cnt / max(self.counts[pi], 1))
+        print(f"hybrid-bigram: ml_pairs={len(self.ml_table)}", flush=True)
+
+    def conn(
+        self, prev: Optional[str], cur: str, backoff: float
+    ) -> Optional[float]:
+        if prev is None:
+            return None
+        pi = self.word_id.get(prev)
+        ci = self.word_id.get(cur)
+        if pi is None or ci is None:
+            return None
+        if backoff > 0.5:  # 生成: 観測済みのみ（現行と同じ）
+            return self.ml_table.get((pi, ci))
+        return super().conn(prev, cur, backoff)
 
 
 def beam_search_bigram(
