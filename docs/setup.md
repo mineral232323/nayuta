@@ -113,6 +113,15 @@ python -m train.export_onnx_online
 詳細は [トップの README](../README.md#2-学習済みアセットを生成) を参照。
 CPU のみだと学習は非現実的なので、この経路は GPU のあるマシン向け。
 
+アセットが揃ったら、APK を入れる前に PC で変換と精度を確認できる:
+
+```bash
+python -m train.cli convert にほんごのへんかんせいど
+python -m train.cli eval --data data/eval/wiki2000.jsonl --limit 200
+```
+
+使い方は [トップの README](../README.md#pc-で変換を試すcli) を参照。
+
 ## 5. ビルド
 
 ```bash

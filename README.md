@@ -166,6 +166,41 @@ APK をビルド成果物（artifact）として保存する。
 バージョンを上げるには `android/app/build.gradle.kts` の `versionName` / `versionCode` を編集してマージする。
 詳しい運用は [docs/ci-cd.md](docs/ci-cd.md) を参照。
 
+## PC で変換を試す（CLI）
+
+端末と同じ 2 段階（ビーム探索 → BERT 再ランク）を PC で回して、変換結果と精度を
+その場で確認できる。アセットは `data/` と `android/app/src/main/assets/` から自動で探す
+（無ければ `bash scripts/android/fetch_assets.sh` で展開する）。
+
+```bash
+# 1 回だけ変換（読みはひらがな。カタカナも可）
+python -m train.cli convert にほんごのへんかんせいど
+python -m train.cli convert --text きょうはいいてんきですね --context "おはよう、"
+
+# 対話モード（モデルのロードは 1 回だけ。:ctx / :beta / :preset などを変更できる。
+# 全角の「：」でも動く。:top のように値を省くと現在値の表示）
+python -m train.cli repl
+
+# 評価セットで文正解率・CER・誤り一覧（--limit 0 で全件、--json-out で保存）
+python -m train.cli eval --data data/eval/wiki2000.jsonl --limit 200
+
+# 「する」接続（記者する / 帰社する など）の曖昧性だけを集めた評価セットを作る
+python -m train.make_suru_eval --limit 300
+python -m train.cli eval --data data/eval/suru_amb.jsonl --limit 300
+```
+
+条件はプリセットで切り替える。
+
+| プリセット | 仮説の生成 | 重み | 想定 |
+|---|---|---|---|
+| `--preset wiki`（既定） | bigram ビーム | delta=1.0, beta=0.5 | Wikipedia 57.10% |
+| `--preset sns` | bigram ビーム | delta=2.0, beta=2.0 | 話し言葉 67.60% |
+| `--preset device` | unigram ビーム | beta=1.2 | Android の `LatticeConverter` と同じ条件 |
+
+`--preset device` は端末と同じアセット・同じ式で動く（ユーザー辞書・カタカナ→英語・
+オンライン学習は端末のみのため含まない）。出力の所要時間は PC の Python 実測なので、
+実機の 7〜11ms とは比較できない。`--no-bert` / `--no-bigram` で各段の寄与も見られる。
+
 ## 使い方
 
 起動すると設定画面が開く。`テスト入力画面` からキーボードの動作を確認できる。
@@ -204,6 +239,7 @@ BERT 本体は凍結し、**最後の薄い線形層だけ**を確定のたび�
 - [docs/m0-results.md](docs/m0-results.md) — BERT 採点の効果と文脈の寄与
 - [docs/m2-step-a.md](docs/m2-step-a.md) / [docs/m2-step-b.md](docs/m2-step-b.md) — 端末実装と bigram の効果
 - [docs/online-learning.md](docs/online-learning.md) — オンライン学習
+- [docs/experiment-mlm-rerank.md](docs/experiment-mlm-rerank.md) — 「する」接続の分解と文レベル LM 再ランク実験
 
 ## 既知の制約
 
