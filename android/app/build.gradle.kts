@@ -64,8 +64,8 @@ android {
         applicationId = "com.nayuta.ime"
         minSdk = 26
         targetSdk = 35
-        versionCode = 9
-        versionName = "0.2.8"
+        versionCode = 10
+        versionName = "0.2.9"
 
         // ONNX Runtime のネイティブライブラリを全 ABI 分入れると APK が膨らむため arm64 に絞る
         ndk {

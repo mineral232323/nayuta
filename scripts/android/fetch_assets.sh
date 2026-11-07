@@ -98,49 +98,34 @@ for dir in dict model; do
 done
 
 # ---------------------------------------------------------------------------
-# v3 スコアラー overlay（HF: Mineral232323/nayuta-scorer-v3）
+# 再ランク済みスコアラー overlay（GitHub: Mineral232323/nayuta-assets）
 #
-# リリース APK 同梱の model/scorer.onnx は再学習前 (v2) の重み。再学習 v3 の
-# fp32 ONNX を取得して動的 int8 (QInt8) に量子化し、model/scorer.onnx を差し替える。
-# 辞書 (dict/) は APK 同梱のものをそのまま使う。
-# 取得に失敗した場合は APK 同梱の v2 のまま続行する（warn）。
+# 文頭 prior-wrong の hard negative で listwise 再ランク学習した int8 ONNX を
+# 取得して model/scorer.onnx を差し替える。sha256 が一致しなければ失敗する。
 #
 #   無効化:   NAYUTA_V3_SCORER=0
-#   差し替え: NAYUTA_V3_SCORER_REPO / NAYUTA_V3_SCORER_FILE / NAYUTA_V3_SCORER_SHA256
+#   差し替え: NAYUTA_SCORER_REPO / NAYUTA_SCORER_TAG / NAYUTA_SCORER_SHA256
 # ---------------------------------------------------------------------------
 if [[ "${NAYUTA_V3_SCORER:-1}" == 1 ]]; then
-    scorer_fp32="$CACHE_DIR/${NAYUTA_V3_SCORER_FILE:-scorer_online_fp32.onnx}"
-    scorer_url="https://huggingface.co/${NAYUTA_V3_SCORER_REPO:-Mineral232323/nayuta-scorer-v3}/resolve/main/${scorer_fp32##*/}"
-    expected_sha="${NAYUTA_V3_SCORER_SHA256:-dcf687fc097a67b82ec571ac30f4d2bdd5e9b5ab4c0c63fae38478e4812e7477}"
+    scorer_repo="${NAYUTA_SCORER_REPO:-Mineral232323/nayuta-assets}"
+    scorer_tag="${NAYUTA_SCORER_TAG:-model-v3-rerank}"
+    scorer_url="https://github.com/$scorer_repo/releases/download/$scorer_tag/scorer.onnx"
+    expected_sha="${NAYUTA_SCORER_SHA256:-40339a527b9faacf59199d7b873be9412bf43018abf3e875985e44a9ddb19dec}"
 
-    echo "==> v3 scorer を取得中: $scorer_url"
-    if fetch_url "$scorer_fp32" "$scorer_url"; then
-        actual_sha="$(hash_file "$scorer_fp32")"
-        if [[ -n "$expected_sha" && "$actual_sha" != "$expected_sha" ]]; then
-            echo "error: v3 scorer fp32 ONNX の sha256 が一致しません" >&2
-            echo "       expected: $expected_sha" >&2
-            echo "       got:      $actual_sha" >&2
-            echo "       重みを更新した場合は NAYUTA_V3_SCORER_SHA256 で期待値を指定してください" >&2
-            exit 1
-        fi
-
-        pydeps="$CACHE_DIR/pydeps"
-        if [[ ! -d "$pydeps/onnxruntime" ]]; then
-            pip3 install --quiet --target "$pydeps" onnxruntime onnx \
-                || pip3 install --quiet --break-system-packages --target "$pydeps" onnxruntime onnx \
-                || true
-        fi
-        mkdir -p "$ASSET_DIR/model"
-        if PYTHONPATH="$pydeps${PYTHONPATH:+:$PYTHONPATH}" python3 "$REPO_ROOT/train/quantize_onnx.py" \
-                --fp32 "$scorer_fp32" --out "$ASSET_DIR/model/scorer.onnx"; then
-            echo "    scorer.onnx sha256=$(hash_file "$ASSET_DIR/model/scorer.onnx")"
-        else
-            echo "warn: int8 量子化に失敗。fp32 のまま model/scorer.onnx を配置します（APK が約39MB増えます）" >&2
-            cp "$scorer_fp32" "$ASSET_DIR/model/scorer.onnx"
-        fi
-    else
-        echo "warn: v3 scorer の取得に失敗。APK 同梱の scorer.onnx (v2) をそのまま使います" >&2
+    echo "==> 再ランク済み scorer を取得中: $scorer_url"
+    mkdir -p "$ASSET_DIR/model"
+    if ! fetch_url "$ASSET_DIR/model/scorer.onnx" "$scorer_url"; then
+        echo "error: scorer の取得に失敗しました" >&2
+        exit 1
     fi
+    actual_sha="$(hash_file "$ASSET_DIR/model/scorer.onnx")"
+    if [[ -n "$expected_sha" && "$actual_sha" != "$expected_sha" ]]; then
+        echo "error: scorer.onnx の sha256 が一致しません" >&2
+        echo "       expected: $expected_sha" >&2
+        echo "       got:      $actual_sha" >&2
+        exit 1
+    fi
+    echo "    scorer.onnx sha256=$actual_sha"
 fi
 
 # ---------------------------------------------------------------------------

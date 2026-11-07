@@ -98,3 +98,20 @@ CPU で 30 文の N-best 生成 → 20 文で 1 epoch 学習まで動作確認�
 - 文頭 prior-wrong の改善は大きい（+5〜7pt）。一般セットは wiki/suru が微増、sns が −0.6pt。
 - さらに伸ばすなら: データ量増（10〜50万文）、sns を混ぜた hard negative、pairwise との併用、
   β の再調整。デバイスは unigram 生成なので、bigram 生成への変更も別途検討。
+
+## CI / 配布（0.2.9 以降）
+
+- 学習済み int8 ONNX は GitHub の **`Mineral232323/nayuta-assets` の `model-v3-rerank` リリース**に配置
+  - sha256: `40339a527b9faacf59199d7b873be9412bf43018abf3e875985e44a9ddb19dec`
+- `scripts/android/fetch_assets.sh` が sha256 検証付きで取得し、リリース APK の
+  `assets/model/scorer.onnx` を差し替える（HF の fp32 取得＋量子化は廃止）
+- モデルを更新したら:
+
+```bash
+bash scripts/publish_scorer.sh logs/<新しいscorer>.onnx model-v3-rerank
+# ↑ 出力された sha256 を fetch_assets.sh の NAYUTA_SCORER_SHA256 既定値に反映する
+```
+
+- 実機に近い構成（new500k 辞書 + 20万語 bigram + unigram 生成 β=1.2）での文頭 prior-wrong 正解率:
+  **0.5341 → 0.6083**（+7.4pt）。ただし「きしゃ」のような同音異義語の一部は悪化するため、
+  次の学習ではバランスの良い hard negative を追加する。
