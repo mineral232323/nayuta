@@ -240,6 +240,7 @@ BERT 本体は凍結し、**最後の薄い線形層だけ**を確定のたび�
 - [docs/m2-step-a.md](docs/m2-step-a.md) / [docs/m2-step-b.md](docs/m2-step-b.md) — 端末実装と bigram の効果
 - [docs/online-learning.md](docs/online-learning.md) — オンライン学習
 - [docs/experiment-mlm-rerank.md](docs/experiment-mlm-rerank.md) — 「する」接続の分解と文レベル LM 再ランク実験
+- [docs/experiment-lexicon-scale.md](docs/experiment-lexicon-scale.md) — 辞書規模と精度・ロード時間の実験
 
 ## 既知の制約
 
